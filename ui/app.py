@@ -8,6 +8,10 @@ import threading
 import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk, Menu
+import traceback
+import logging
+import threading
+import sys
 
 # Importa módulos do projeto
 from core.database import DatabaseManager
@@ -54,6 +58,35 @@ class App(ctk.CTk):
         self.logger = Logger(self.log_queue, self.db)
         self.config = Config()
         self.orchestrator = Orchestrator(self.logger, self.config)
+        def _thread_excepthook(args):
+            # args é threading.ExceptHookArgs: (exc_type, exc_value, exc_traceback, thread)
+            try:
+                logging.critical(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+            except Exception:
+                logging.exception("Falha ao logar exceção de thread.")
+            # tenta também enviar para o logger de UI (se disponível)
+            try:
+                tb = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+                if hasattr(self, "logger"):
+                    self.logger.log(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", "CRITICAL")
+                    self.logger.log(tb, "DEBUG")
+                else:
+                    logging.debug(tb)
+            except Exception:
+                logging.exception("Falha ao enviar exceção de thread para self.logger.")
+        threading.excepthook = _thread_excepthook
+
+        # Também reforçamos o excepthook global (main thread)
+        def _main_excepthook(exc_type, exc_value, exc_traceback):
+            logging.critical(f"Unhandled exception (main thread): {exc_value}", exc_info=(exc_type, exc_value, exc_traceback))
+            try:
+                tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+                if hasattr(self, "logger"):
+                    self.logger.log(f"Unhandled exception (main thread): {exc_value}", "CRITICAL")
+                    self.logger.log(tb, "DEBUG")
+            except Exception:
+                logging.exception("Falha ao enviar exceção principal para self.logger.")
+        sys.excepthook = _main_excepthook
         self.is_running_task = False
         self.stop_event = threading.Event()
         self.current_task_id = None
@@ -75,14 +108,59 @@ class App(ctk.CTk):
         self.db.recover_interrupted_tasks(wait=True)
         self._load_and_display_queue()
 
-    def _on_closing(self):
-        """Lida com o fechamento da janela principal."""
-        self.logger.log("Fechando a aplicação...", "INFO")
-        if self.is_running_task and messagebox.askyesno("Sair", "Tarefa em andamento. Deseja realmente sair?"):
-            self.stop_event.set()
-            self.orchestrator.interrupt_current_task()
-        self.db.close()
-        self.destroy()
+    def _on_closing(self, force: bool = False):
+        """Manipula o fechamento da aplicação de forma segura."""
+        try:
+            import traceback as _tb
+            stack = "".join(_tb.format_stack())
+            self.logger.log("Fechando a aplicação... (invocado _on_closing)", "INFO")
+            # registra a stack para entender quem chamou
+            self.logger.log("Stack do _on_closing:\n" + stack, "DEBUG")
+        except Exception:
+            logging.exception("Falha ao registrar stack no _on_closing.")
+
+        # Se há tarefa em execução e não for forçado, confirmar com o usuário
+        if self.is_running_task and not force:
+            try:
+                answer = messagebox.askyesno("Sair", "Tarefa em andamento. Deseja realmente sair?")
+            except Exception:
+                # se messagebox falhar por algum motivo, assume NÃO para evitar fechar à força
+                self.logger.log("Falha ao mostrar diálogo de confirmação; cancelando fechamento.", "WARNING")
+                return
+
+            if not answer:
+                self.logger.log("Fechamento cancelado pelo usuário (tarefa em andamento).", "INFO")
+                return
+
+            # usuário confirmou: sinaliza parada e interrompe a tarefa
+            try:
+                self.stop_event.set()
+                self.orchestrator.interrupt_current_task()
+            except Exception as e:
+                self.logger.log(f"Erro ao tentar interromper tarefa: {e}", "ERROR")
+
+        # Se chegou aqui, pode fechar com segurança (ou foi chamado com force=True)
+        try:
+            # garante que todas as escritas pendentes no DB sejam concluídas
+            if hasattr(self.db, "_write_queue") and hasattr(self.db, "_writer_thread"):
+                try:
+                    self.db._write_queue.join()
+                except Exception:
+                    pass
+
+            # fecha o DB de forma tolerante
+            try:
+                self.db.close()
+            except Exception as e:
+                self.logger.log(f"Falha ao fechar DB durante o encerramento: {e}", "WARNING")
+
+            # finalmente destrói a janela principal
+            try:
+                self.destroy()
+            except Exception as e:
+                self.logger.log(f"Falha ao destruir janela principal: {e}", "ERROR")
+        except Exception:
+            logging.exception("Erro inesperado no processo de fechamento.")
 
     def _create_widgets(self):
         """Cria e organiza todos os widgets da interface principal."""
