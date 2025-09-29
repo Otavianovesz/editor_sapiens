@@ -1,0 +1,23 @@
+# Modelos de IA e arquivos grandes
+models/
+
+# Cache e artefatos do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de ambiente virtual
+venv/
+.venv/
+
+# Bancos de dados SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Arquivos de configuração do VSCode
+.vscode/
