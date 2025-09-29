@@ -408,6 +408,20 @@ class App(ctk.CTk):
         mode = task_config.get('operation_mode', 'full_pipe')
         task_id = task_config['id']
         
+        # Log inicial detalhado do contexto da tarefa
+        self.logger.log(f"=== Iniciando Nova Tarefa ===", "INFO", task_id)
+        self.logger.log(f"ID: {task_id}", "DEBUG", task_id)
+        self.logger.log(f"Modo: {mode}", "INFO", task_id)
+        self.logger.log(f"Arquivo: {os.path.basename(task_config.get('video_path', 'N/A'))}", "INFO", task_id)
+        self.logger.log(f"Análise Visual: {'Sim' if task_config.get('use_visual_analysis') else 'Não'}", "INFO", task_id)
+        
+        if mode == 'full_pipe':
+            self.logger.log("Pipeline completo: Transcrição → Análise → Renderização", "INFO", task_id)
+        elif mode == 'sapiens_only':
+            self.logger.log("Apenas roteirização: Transcrição → Análise", "INFO", task_id)
+        elif mode == 'render_only':
+            self.logger.log("Apenas renderização do roteiro existente", "INFO", task_id)
+        
         def send_progress(percentage, stage):
             """Helper para enviar atualizações de progresso."""
             try:

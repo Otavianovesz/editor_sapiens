@@ -8,6 +8,7 @@ import queue
 import threading
 import json
 import dataclasses
+import logging
 from typing import List, Any, Optional, Dict
 
 from .config import Config
@@ -68,66 +69,73 @@ class MediaProcessor:
 
 class AudioTranscriber:
     """Responsável pela transcrição de áudio usando o modelo Whisper."""
+    # Cache de modelo em nível de classe para Thread-Safety
+    _model_cache = None
+    _model_lock = threading.Lock()
+
     def __init__(self, logger: Logger, config: Config):
         self.logger = logger
         self.config = config
-        self.model = None
         self._active_task_id = None
 
-    def cleanup(self) -> None:
-        """Libera recursos do modelo Whisper."""
-        if self.model:
-            task_id = self._active_task_id or 'Global'
-            try:
-                # Primeiro liberamos quaisquer recursos CUDA
+    @classmethod
+    def cleanup(cls) -> None:
+        """Libera recursos do modelo Whisper de forma thread-safe."""
+        with cls._model_lock:
+            if cls._model_cache:
                 try:
-                    import torch
-                    if hasattr(self.model, 'model') and hasattr(self.model.model, 'to'):
-                        self.model.model.to('cpu')
-                    torch.cuda.empty_cache()
-                except Exception as e:
-                    self.logger.log(f"Aviso na limpeza CUDA: {e}", "WARNING", task_id)
+                    # Primeiro liberamos quaisquer recursos CUDA
+                    try:
+                        import torch
+                        if hasattr(cls._model_cache, 'model') and hasattr(cls._model_cache.model, 'to'):
+                            cls._model_cache.model.to('cpu')
+                        torch.cuda.empty_cache()
+                    except Exception as e:
+                        logging.warning(f"Aviso na limpeza CUDA: {e}")
 
-                # Agora liberamos o modelo
-                try:
-                    del self.model
+                    # Agora liberamos o modelo
+                    try:
+                        del cls._model_cache
+                    except Exception as e:
+                        logging.warning(f"Aviso ao deletar modelo: {e}")
+                    
+                    cls._model_cache = None
+                    logging.debug("Modelo Whisper liberado com sucesso")
                 except Exception as e:
-                    self.logger.log(f"Aviso ao deletar modelo: {e}", "WARNING", task_id)
+                    logging.warning(f"Erro ao liberar modelo Whisper: {e}")
+
+    @classmethod
+    def _load_model(cls, logger, config, task_id):
+        with cls._model_lock:
+            if cls._model_cache is not None:
+                return
                 
-                self.model = None
-                self.logger.log("Modelo Whisper liberado com sucesso", "DEBUG", task_id)
-            except Exception as e:
-                self.logger.log(f"Erro ao liberar modelo Whisper: {e}", "WARNING", task_id)
-            finally:
-                self._active_task_id = None
-
-    def _load_model(self, task_id):
-        try:
-            from faster_whisper import WhisperModel
-        except ImportError:
-            self.logger.log("Módulo 'faster_whisper' não encontrado! Instale com 'pip install faster-whisper'", "CRITICAL", task_id)
-            raise
-
-        model_name = self.config.get("whisper_model_size")
-        device = self.config.get("whisper_device")
-        compute_type = self.config.get("whisper_compute_type")
-        download_root = "models"
-        
-        self.logger.log(f"Carregando modelo Whisper '{model_name}' (Dispositivo: {device}, Tipo: {compute_type})...", "INFO", task_id)
-        try:
             try:
-                self.logger.log(f"Verificando cache local para o modelo '{model_name}'...", "INFO", task_id)
-                self.model = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=True)
-                self.logger.log("Modelo encontrado no cache local. Carregamento rápido.", "SUCCESS", task_id)
-            except Exception:
-                self.logger.log(f"Modelo '{model_name}' não encontrado no cache local. Iniciando download...", "WARNING", task_id)
-                self.logger.log("--> ESTE PROCESSO PODE LEVAR VÁRIOS MINUTOS E USAR GIGABYTES DE ESPAÇO. <--", "WARNING", task_id)
-                self.logger.log("--> Por favor, aguarde. O aplicativo pode parecer travado durante o download. <--", "WARNING", task_id)
-                self.model = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=False)
-                self.logger.log("Download do modelo concluído com sucesso!", "SUCCESS", task_id)
-        except Exception as e:
-            self.logger.log(f"ERRO CRÍTICO ao baixar ou carregar modelo Whisper: {e}", "CRITICAL", task_id, exc_info=True)
-            raise
+                from faster_whisper import WhisperModel
+            except ImportError:
+                logger.log("Módulo 'faster_whisper' não encontrado! Instale com 'pip install faster-whisper'", "CRITICAL", task_id)
+                raise
+
+            model_name = config.get("whisper_model_size")
+            device = config.get("whisper_device")
+            compute_type = config.get("whisper_compute_type")
+            download_root = "models"
+            
+            logger.log(f"Carregando modelo Whisper '{model_name}' (Dispositivo: {device}, Tipo: {compute_type})...", "INFO", task_id)
+            try:
+                try:
+                    logger.log(f"Verificando cache local para o modelo '{model_name}'...", "INFO", task_id)
+                    cls._model_cache = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=True)
+                    logger.log("Modelo encontrado no cache local. Carregamento rápido.", "SUCCESS", task_id)
+                except Exception:
+                    logger.log(f"Modelo '{model_name}' não encontrado no cache local. Iniciando download...", "WARNING", task_id)
+                    logger.log("--> ESTE PROCESSO PODE LEVAR VÁRIOS MINUTOS E USAR GIGABYTES DE ESPAÇO. <--", "WARNING", task_id)
+                    logger.log("--> Por favor, aguarde. O aplicativo pode parecer travado durante o download. <--", "WARNING", task_id)
+                    cls._model_cache = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=False)
+                    logger.log("Download do modelo concluído com sucesso!", "SUCCESS", task_id)
+            except Exception as e:
+                logger.log(f"ERRO CRÍTICO ao baixar ou carregar modelo Whisper: {e}", "CRITICAL", task_id, exc_info=True)
+                raise
 
     def transcribe(self, path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Any]:
         """
@@ -148,27 +156,24 @@ class AudioTranscriber:
 
         self._active_task_id = task_id
         self.logger.task_id_filter.set_task_id(task_id)
-
-        # Garante que o modelo será liberado em caso de erro
-        if self.model:
-            try:
-                self.cleanup()
-            except Exception as e:
-                self.logger.log(f"Aviso ao limpar modelo existente: {e}", "WARNING", task_id)
         
         try:
-            if self.model is None:
+            # Garantir que o modelo está carregado
+            if AudioTranscriber._model_cache is None:
                 try:
-                    self._load_model(task_id)
+                    AudioTranscriber._load_model(self.logger, self.config, task_id)
                 except Exception as e:
                     self.logger.log(f"Erro ao carregar modelo Whisper: {e}", "CRITICAL", task_id)
                     return []
+                    
+            # Usar o modelo do cache da classe
+            model = AudioTranscriber._model_cache
 
             lang = self.config.get("whisper_language") or None
             self.logger.log(f"Iniciando transcrição (Idioma: {'Automático' if lang is None else lang}).", "INFO", task_id)
             
             try:
-                segments_gen, info = self.model.transcribe(path, language=lang, word_timestamps=True, vad_filter=True)
+                segments_gen, info = model.transcribe(path, language=lang, word_timestamps=True, vad_filter=True)
             except Exception as e:
                 self.logger.log(f"Erro durante a transcrição: {e}", "ERROR", task_id, exc_info=True)
                 return []
@@ -182,9 +187,10 @@ class AudioTranscriber:
                 
             self.logger.log(f"Idioma detectado: {info.language} (Probabilidade: {info.language_probability:.2f}), Duração: {info.duration:.2f}s", "INFO", task_id)
             
+            # Otimização de memória: cria uma classe leve para armazenar apenas os dados essenciais
             Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
             all_words = []
-
+            
             try:
                 for segment in segments_gen:
                     if stop_event.is_set():
@@ -195,63 +201,25 @@ class AudioTranscriber:
                     pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
                     
                     if hasattr(segment, "words") and segment.words:
+                        # Cria cópias leves dos objetos de palavra para economizar memória
                         for word_obj in segment.words:
                             all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
 
+                if len(all_words) == 0:
+                    self.logger.log("Nenhuma palavra foi transcrita. Possível problema com o áudio.", "ERROR", task_id)
+                    return []
+
+                self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
+                return all_words
+                
             except Exception as e:
                 self.logger.log(f"Erro durante o processamento de segmentos: {e}", "ERROR", task_id, exc_info=True)
                 return []
-
-            if len(all_words) == 0:
-                self.logger.log("Nenhuma palavra foi transcrita. Possível problema com o áudio.", "ERROR", task_id)
-                return []
-
-            self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
-            return all_words
-            
+                
         except Exception as e:
             self.logger.log(f"Erro fatal durante a transcrição: {e}", "CRITICAL", task_id, exc_info=True)
             return []
-        finally:
-            self.logger.task_id_filter.set_task_id(None)
-        
-        if info.duration <= 0:
-            self.logger.log("Duração inválida do áudio detectada.", "ERROR", task_id)
-            return []
             
-        if not info.language or info.language_probability < 0.5:
-            self.logger.log(f"Aviso: Baixa confiança na detecção do idioma ({info.language}, {info.language_probability:.2f})", "WARNING", task_id)
-            
-        self.logger.log(f"Idioma detectado: {info.language} (Probabilidade: {info.language_probability:.2f}), Duração: {info.duration:.2f}s", "INFO", task_id)
-        
-        # Otimização de memória: cria uma classe leve para armazenar apenas os dados
-        # essenciais, evitando guardar os objetos originais do faster-whisper.
-        Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
-        all_words = []
-        
-        try:
-            for segment in segments_gen:
-                if stop_event.is_set():
-                    self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
-                    return []
-                
-                progress = 11 + (segment.end / info.duration) * 39 if info.duration > 0 else 50
-                pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
-                
-                if hasattr(segment, "words") and segment.words:
-                    # Cria cópias leves dos objetos de palavra para economizar memória.
-                    for word_obj in segment.words:
-                        all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
-
-            if len(all_words) == 0:
-                self.logger.log("Nenhuma palavra foi transcrita. Possível problema com o áudio.", "ERROR", task_id)
-                return []
-
-            self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
-            return all_words
-        except Exception as e:
-            self.logger.log(f"Erro durante o processamento de segmentos: {e}", "ERROR", task_id, exc_info=True)
-            return []
         finally:
             self.logger.task_id_filter.set_task_id(None)
 
@@ -443,11 +411,28 @@ class ContentAnalyzer:
             score = 0
             cut_reason = None
             
+            # Pontuação baseada em pausas
             if pause >= self.config.get('pause_threshold_s'):
                 score += self.config.get('scores')['pause_long'] if pause > 0.8 else self.config.get('scores')['pause_medium']
                 if score <= self.config.get('cut_threshold'):
                     cut_reason = f"pausa longa ({pause:.2f}s)"
             
+            # TODO: Implementar análise visual aqui
+            # Se os dados visuais estiverem disponíveis e habilitados, usar para ajustar a pontuação
+            if use_visual and visual_data:
+                # Encontrar dados visuais próximos ao timestamp atual
+                current_time = cur.end
+                visual_score = 0
+                
+                # TODO: Implementar lógica de pontuação visual
+                # Exemplo de estrutura:
+                # - Procurar por mudanças significativas no olhar/gestos próximo ao timestamp
+                # - Adicionar pontos se houver indicadores visuais de pausa natural
+                # - Considerar expressões corporais que indicam fim de pensamento
+                # Por enquanto, apenas logamos que temos dados visuais disponíveis
+                self.logger.log(f"Dados visuais disponíveis para t={current_time:.2f}s", "DEBUG", task_id, to_ui=False)
+            
+            # Análise de palavras de preenchimento
             is_filler = cur.word.strip('.,?!- ').lower() in fillers
             if is_filler and (pause > ctx_pause or (i > 0 and cur.start - words[i-1].end > ctx_pause)):
                 cut_reason = f"palavra de preenchimento ('{cur.word.strip()}')"
