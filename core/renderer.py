@@ -18,7 +18,7 @@ class VideoRenderer:
     Executa a renderização de um vídeo com base em um arquivo de roteiro JSON,
     utilizando FFmpeg para cortar e concatenar os segmentos.
     """
-    def __init__(self, source_path: str, json_path: str, output_path: str, preset: str, logger: Logger, pq: Queue, task_id: str):
+    def __init__(self, source_path: str, json_path: str, output_path: str, preset: str, logger: Logger, pq: Queue, task_id: str, operation_mode: str = 'full_pipe'):
         self.source_path = source_path
         self.json_path = json_path
         self.output_path = output_path
@@ -26,6 +26,7 @@ class VideoRenderer:
         self.logger = logger
         self.pq = pq
         self.task_id = task_id
+        self.operation_mode = operation_mode
         self.process = None
 
     def interrupt(self):
@@ -39,15 +40,27 @@ class VideoRenderer:
                 self.process.kill()
 
     def _time_to_seconds(self, time_val: Union[int, float, str]) -> float:
-        """Converte diferentes formatos de tempo para segundos (float)."""
+        """Converte diferentes formatos de tempo (incluindo 'S.fff') para segundos (float)."""
         if isinstance(time_val, (int, float)):
             return float(time_val)
+        
         if isinstance(time_val, str):
+            # 1. Tenta converter diretamente de string "segundos.milissegundos" para float
             try:
-                dt = datetime.strptime(time_val, '%H:%M:%S.%f')
+                return float(time_val)
             except ValueError:
-                dt = datetime.strptime(time_val, '%H:%M:%S')
-            return timedelta(hours=dt.hour, minutes=dt.minute, seconds=dt.second, microseconds=dt.microsecond).total_seconds()
+                # 2. Fallback para o formato HH:MM:SS[.f]
+                try:
+                    # Tenta %H:%M:%S.%f (com milissegundos)
+                    dt = datetime.strptime(time_val, '%H:%M:%S.%f')
+                except ValueError:
+                    # Tenta %H:%M:%S (sem milissegundos)
+                    dt = datetime.strptime(time_val, '%H:%M:%S')
+                
+                # Converte o objeto datetime para segundos totais
+                return timedelta(hours=dt.hour, minutes=dt.minute, 
+                               seconds=dt.second, microseconds=dt.microsecond).total_seconds()
+        
         raise TypeError(f"Formato de tempo '{time_val}' não suportado.")
 
     def run(self, stop_event: Event):
@@ -128,6 +141,14 @@ class VideoRenderer:
         
         self.process = subprocess.Popen(cmd, cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, creationflags=creation_flags, encoding='utf-8', errors='ignore')
         
+        # Lógica de cálculo de progresso baseada no modo
+        base_progress = 0
+        range_progress = 99
+        if self.operation_mode == 'full_pipe':
+            # No modo full_pipe, a renderização inicia em 75%
+            base_progress = 75
+            range_progress = 24  # 99 - 75
+        
         time_regex = re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
         for line in self.process.stdout:
             if stop_event.is_set():
@@ -138,7 +159,14 @@ class VideoRenderer:
                 h, m, s, cs = map(int, match.groups())
                 current = h * 3600 + m * 60 + s + cs / 100
                 if total_dur > 0:
-                    self.pq.put({'type': 'progress', 'stage': 'Renderizando', 'percentage': min(25 + (current / total_dur) * 74, 99), 'task_id': self.task_id})
+                    # Novo cálculo de progresso baseado no modo
+                    percentage = base_progress + (current / total_dur) * range_progress
+                    self.pq.put({
+                        'type': 'progress',
+                        'stage': 'Renderizando',
+                        'percentage': min(percentage, 99),
+                        'task_id': self.task_id
+                    })
                     
         self.process.wait()
         

@@ -6,13 +6,47 @@ import uuid
 import queue
 import threading
 import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
+from datetime import datetime, timedelta
 import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk, Menu
 import traceback
 import logging
 from threading import Lock
+
+def _time_to_seconds(time_val: Union[int, float, str]) -> float:
+    """
+    Converte diferentes formatos de tempo para segundos (float).
+    Suporta múltiplos formatos:
+    - Inteiros/floats (convertidos diretamente)
+    - Strings em formato 'SS.fff' (segundos com milissegundos)
+    - Strings em formato 'HH:MM:SS[.f]' (formato completo de tempo)
+    """
+    if isinstance(time_val, (int, float)):
+        return float(time_val)
+    
+    if isinstance(time_val, str):
+        try:
+            # 1. Tenta converter diretamente para float (formato do roteiro gerado)
+            return float(time_val)
+        except ValueError:
+            try:
+                # 2. Tenta formato HH:MM:SS.fff
+                dt = datetime.strptime(time_val, '%H:%M:%S.%f')
+            except ValueError:
+                # 3. Tenta formato HH:MM:SS
+                dt = datetime.strptime(time_val, '%H:%M:%S')
+            
+            # Converte objeto datetime para segundos
+            return timedelta(
+                hours=dt.hour,
+                minutes=dt.minute,
+                seconds=dt.second,
+                microseconds=getattr(dt, 'microsecond', 0)
+            ).total_seconds()
+    
+    raise TypeError(f"Formato de tempo não suportado: {time_val} ({type(time_val).__name__})")
 
 # Importa constantes globais
 from utils.constants import *
@@ -136,109 +170,113 @@ class App(ctk.CTk):
         self._load_and_display_queue()
 
     def _on_closing(self, force: bool = False):
-        """Manipula o fechamento da aplicação de forma segura."""
-        try:
-            import traceback as _tb
-            stack = "".join(_tb.format_stack())
-            self.logger.log("Fechando a aplicação... (invocado _on_closing)", "INFO")
-            self.logger.log("Stack do _on_closing:\n" + stack, "DEBUG")
-        except Exception:
-            logging.exception("Falha ao registrar stack no _on_closing.")
-
-        # Se há tarefa em execução e não for forçado, confirmar com o usuário
+        """Lida com o fechamento da janela principal e a limpeza de recursos."""
+        self.logger.log("Iniciando processo de encerramento da aplicação.", "INFO")
+        
+        # 1. Verificação de tarefas e confirmação do usuário
         if self.is_running_task and not force:
             try:
-                answer = messagebox.askyesno("Sair", "Tarefa em andamento. Deseja realmente sair?")
-            except Exception:
-                self.logger.log("Falha ao mostrar diálogo de confirmação; cancelando fechamento.", "WARNING")
+                answer = messagebox.askyesno(
+                    "Sair", 
+                    "Tarefa em andamento. Deseja realmente sair e interrompê-la?"
+                )
+                if not answer:
+                    self.logger.log("Fechamento cancelado pelo usuário.", "INFO")
+                    return
+            except Exception as e:
+                self.logger.log(f"Erro ao mostrar diálogo de confirmação: {e}", "WARNING")
                 return
 
-            if not answer:
-                self.logger.log("Fechamento cancelado pelo usuário (tarefa em andamento).", "INFO")
-                return
-
-        # Inicia processo de finalização segura
+        # 2. Interrompe tarefas em execução
         try:
-            # 1. Sinaliza parada global
-            self.stop_event.set()
-            
-            # 2. Interrompe tarefas ativas
             if self.is_running_task:
+                self.stop_event.set()
+                self.orchestrator.interrupt_current_task()
+                self.logger.log("Tarefa em execução interrompida.", "INFO")
+                # Pequena espera para a tarefa terminar
+                import time
+                time.sleep(0.5)
+        except Exception as e:
+            self.logger.log(f"Aviso ao interromper tarefa: {e}", "WARNING")
+
+        # 3. Limpa filas de progresso e log
+        try:
+            def clear_queue(q):
+                while True:
+                    try:
+                        q.get_nowait()
+                    except queue.Empty:
+                        break
+            
+            clear_queue(self.progress_queue)
+            clear_queue(self.log_queue)
+            self.logger.log("Filas de progresso e log limpas.", "DEBUG")
+        except Exception as e:
+            self.logger.log(f"Aviso ao limpar filas: {e}", "WARNING")
+
+        # 4. Cancela callbacks pendentes
+        try:
+            pending = self.tk.call('after', 'info')
+            for event_id in pending:
                 try:
-                    self.orchestrator.interrupt_current_task()
-                    # Aguarda um pouco para a thread terminar
-                    import time
-                    time.sleep(0.5)
+                    self.after_cancel(event_id)
+                except Exception:
+                    pass
+            self.logger.log("Callbacks pendentes cancelados.", "DEBUG")
+        except Exception as e:
+            self.logger.log(f"Aviso ao cancelar callbacks: {e}", "WARNING")
+
+        # 5. Limpeza de recursos críticos (ANTES de destruir a UI)
+        try:
+            # 5.1 Limpeza do banco de dados
+            if hasattr(self, 'db') and self.db:
+                try:
+                    self.db.close()
+                    self.logger.log("Banco de dados fechado com sucesso.", "INFO")
                 except Exception as e:
-                    self.logger.log(f"Erro ao interromper tarefa: {e}", "ERROR")
-
-            # 3. Limpa filas
-            try:
-                while True:
-                    try:
-                        self.progress_queue.get_nowait()
-                    except queue.Empty:
-                        break
-                while True:
-                    try:
-                        self.log_queue.get_nowait()
-                    except queue.Empty:
-                        break
-            except Exception as e:
-                self.logger.log(f"Erro ao limpar filas: {e}", "WARNING")
-
-            # 4. Finaliza o banco de dados
-            try:
-                if hasattr(self.db, "_write_queue"):
-                    # Sinaliza para a thread de escrita parar
-                    self.db._write_queue.put(None)
-                    # Aguarda thread terminar (com timeout)
-                    if hasattr(self.db, "_writer_thread"):
-                        self.db._writer_thread.join(timeout=2.0)
-                self.db.close()
-            except Exception as e:
-                self.logger.log(f"Erro ao finalizar banco de dados: {e}", "ERROR")
-
-            # 5. Cancela callbacks pendentes
-            try:
-                pending = self.tk.call('after', 'info')
-                for event_id in pending:
-                    try:
-                        self.after_cancel(event_id)
-                    except Exception:
-                        pass
-            except Exception as e:
-                self.logger.log(f"Erro ao cancelar callbacks: {e}", "WARNING")
-
-            # 6. Limpa recursos via app_context se disponível
-            try:
-                if self.app_context:
+                    self.logger.log(f"Erro ao fechar banco de dados: {e}", "ERROR")
+            
+            # 5.2 Limpeza do app_context
+            if hasattr(self, 'app_context') and self.app_context:
+                try:
                     self.app_context.cleanup()
-                # Limpa referências cíclicas
-                self.orchestrator = None
-                self.logger = None
-                self.db = None
-            except Exception as e:
-                self.logger.log(f"Erro ao limpar recursos: {e}", "ERROR")
-
-            # 7. Destrói a janela
+                    self.logger.log("App context limpo.", "DEBUG")
+                except Exception as e:
+                    self.logger.log(f"Erro ao limpar app context: {e}", "WARNING")
+                    
+            # 5.3 Força garbage collection
             try:
-                # Força GC antes de destruir
                 import gc
                 gc.collect()
-                self.quit()
-                self.destroy()
-            except Exception as e:
-                self.logger.log(f"Erro ao destruir janela: {e}", "ERROR")
-                # Força encerramento se destroy() falhar
-                import os, signal
-                os._exit(0)
+                self.logger.log("Garbage collection executado.", "DEBUG")
+            except Exception:
+                pass
+                
+        except Exception as e:
+            self.logger.log(f"Erro durante limpeza de recursos: {e}", "ERROR")
 
+        # 6. Destruição da interface (APÓS limpeza de recursos)
+        try:
+            self.logger.log("Destruindo interface gráfica...", "INFO")
+            # Primeiro tenta quit() para fechar corretamente
+            try:
+                self.quit()
+            except Exception:
+                pass
+            # Depois força destroy()
+            self.destroy()
+        except Exception as e:
+            self.logger.log(f"Erro ao destruir janela: {e}", "ERROR")
+            # Em caso de falha, força o encerramento
+            import os
+            os._exit(0)
+            
+        # 7. Último recurso: força encerramento
+        try:
+            import os
+            os._exit(0)
         except Exception:
-            logging.exception("Erro fatal no processo de fechamento.")
-            # Força encerramento em último caso
-            import os, signal
-            os._exit(1)
+            pass
 
     def _create_widgets(self):
         """Cria e organiza todos os widgets da interface principal."""
@@ -452,7 +490,7 @@ class App(ctk.CTk):
             
         self.logger.log("\n[SISTEMA]", "INFO", task_id)
         self.logger.log(f"Thread de Execução: {threading.current_thread().name}", "DEBUG", task_id)
-        self.logger.log(f"Timestamp de Início: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO", task_id)
+        self.logger.log(f"Timestamp de Início: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO", task_id)
         self.logger.log(separator, "INFO", task_id)
         
         def send_progress(percentage, stage):
@@ -497,7 +535,7 @@ class App(ctk.CTk):
                             'render_metadata': {
                                 'total_segments': len(script_data['segments']),
                                 'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
-                                'validation_timestamp': str(datetime.datetime.now())
+                                'validation_timestamp': str(datetime.now())
                             }
                         }, wait=True)
                 except Exception as e:
@@ -524,7 +562,7 @@ class App(ctk.CTk):
                     'message': str(e),
                     'details': {
                         'mode': mode,
-                        'timestamp': str(datetime.datetime.now()),
+                        'timestamp': str(datetime.now()),
                         'traceback': traceback.format_exc()
                     }
                 })
@@ -661,46 +699,95 @@ class App(ctk.CTk):
             self.logger.log(f"Erro ao atualizar UI: {e}", "ERROR", task_id, exc_info=True)
 
     def _validate_script_json(self, script_path, task_id):
-        """Valida o arquivo JSON do roteiro."""
+        """
+        Valida o arquivo JSON do roteiro com verificações robustas de tipo e valor.
+        Retorna os dados validados ou levanta ValueError com mensagem detalhada.
+        """
         try:
-            with open(script_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # 1. Leitura e validação do arquivo
+            try:
+                with open(script_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Erro de sintaxe no arquivo JSON: {e}")
+            except IOError as e:
+                raise ValueError(f"Erro ao ler arquivo: {e}")
                 
-            # Validações básicas
+            # 2. Validação da estrutura básica
             if not isinstance(data, dict):
-                raise ValueError("JSON inválido: deve ser um objeto/dicionário")
+                raise ValueError("JSON inválido: raiz deve ser um objeto/dicionário")
                 
-            if 'segments' not in data:
+            segments = data.get('segments')
+            if segments is None:
                 raise ValueError("JSON inválido: propriedade 'segments' não encontrada")
                 
-            if not isinstance(data['segments'], list):
+            if not isinstance(segments, list):
                 raise ValueError("JSON inválido: 'segments' deve ser uma lista")
                 
-            if not data['segments']:
+            if not segments:
                 raise ValueError("JSON inválido: lista de segmentos está vazia")
                 
-            # Valida cada segmento
-            for i, segment in enumerate(data['segments']):
+            # 3. Validação detalhada dos segmentos
+            total_duration = 0.0
+            prev_end = None
+            
+            for i, segment in enumerate(segments):
+                # 3.1 Validação de tipo
                 if not isinstance(segment, dict):
                     raise ValueError(f"Segmento {i} inválido: deve ser um objeto/dicionário")
-                    
-                # Valida start_time e end_time
+                
+                # 3.2 Validação das chaves obrigatórias
                 if 'start_time' not in segment:
                     raise ValueError(f"Segmento {i} inválido: campo 'start_time' não encontrado")
-                    
                 if 'end_time' not in segment:
                     raise ValueError(f"Segmento {i} inválido: campo 'end_time' não encontrado")
-                    
+                
+                # 3.3 Validação dos valores de tempo
                 try:
                     start = float(segment['start_time'])
                     end = float(segment['end_time'])
-                except ValueError:
-                    raise ValueError(f"Segmento {i} inválido: 'start_time' e 'end_time' devem ser numéricos")
+                except (ValueError, TypeError):
+                    raise ValueError(
+                        f"Segmento {i} inválido: 'start_time' e 'end_time' devem ser números "
+                        f"(encontrado {type(segment['start_time']).__name__} e {type(segment['end_time']).__name__})"
+                    )
+                
+                # 3.4 Validação de lógica temporal
+                if start < 0 or end < 0:
+                    raise ValueError(f"Segmento {i} inválido: timestamps não podem ser negativos")
                     
                 if start >= end:
-                    raise ValueError(f"Segmento {i} inválido: 'start_time' deve ser menor que 'end_time'")
-                    
+                    raise ValueError(
+                        f"Segmento {i} inválido: start_time ({start}) deve ser menor que end_time ({end})"
+                    )
+                
+                # 3.5 Validação de sequência (opcional)
+                if prev_end is not None and start < prev_end:
+                    self.logger.log(
+                        f"Aviso: Segmento {i} começa antes do fim do segmento anterior "
+                        f"(overlap de {prev_end - start:.2f}s)",
+                        "WARNING", task_id
+                    )
+                
+                prev_end = end
+                total_duration += (end - start)
+            
+            # 4. Validação final
+            if total_duration <= 0:
+                raise ValueError("Duração total do roteiro é zero ou negativa")
+                
+            self.logger.log(
+                f"Roteiro validado com sucesso: {len(segments)} segmentos, "
+                f"duração total de {total_duration:.2f}s",
+                "SUCCESS", task_id
+            )
+            
             return data
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Erro inesperado ao validar roteiro: {str(e)}")
             
         except json.JSONDecodeError as e:
             raise ValueError(f"Erro ao decodificar JSON: {str(e)}")
@@ -720,7 +807,7 @@ class App(ctk.CTk):
                     'render_config': {
                         'total_segments': len(script_data['segments']),
                         'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
-                        'timestamp': str(datetime.datetime.now())
+                        'timestamp': str(datetime.now())
                     }
                 }, wait=True)
                 self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
@@ -743,7 +830,7 @@ class App(ctk.CTk):
             task_config = tasks[0]
             
             if task_config.get('operation_mode') == 'full_pipe':
-                # 1. Validações iniciais
+                # 1. Validações iniciais e do roteiro gerado
                 if 'script_path' not in q_item:
                     raise ValueError("Caminho do script não fornecido")
                     
@@ -751,7 +838,57 @@ class App(ctk.CTk):
                 if not os.path.exists(script_path):
                     raise ValueError(f"Arquivo de script não encontrado: {script_path}")
                     
-                self.logger.log(f"Pipeline 'Sapiens' concluído. Preparando renderização...", "INFO", task_id)
+                self.logger.log(f"Pipeline 'Sapiens' concluído. Validando roteiro gerado...", "INFO", task_id)
+                
+                # Validação robusta do roteiro antes de prosseguir
+                try:
+                    with open(script_path, 'r', encoding='utf-8') as f:
+                        script_data = json.load(f)
+                    
+                    segments = script_data.get('segments', [])
+                    if not isinstance(segments, list) or not segments:
+                        raise ValueError("Roteiro inválido: lista de segmentos vazia ou ausente")
+                        
+                    # Calcula duração total usando as chaves corretas
+                    total_duration = 0.0
+                    for i, segment in enumerate(segments):
+                        if not isinstance(segment, dict):
+                            raise ValueError(f"Segmento {i} inválido: formato incorreto")
+                            
+                        if 'start_time' not in segment or 'end_time' not in segment:
+                            raise ValueError(f"Segmento {i} inválido: campos start_time/end_time ausentes")
+                            
+                        try:
+                            start = float(segment['start_time'])
+                            end = float(segment['end_time'])
+                            if end <= start:
+                                raise ValueError(f"Segmento {i} inválido: end_time deve ser maior que start_time")
+                            total_duration += (end - start)
+                        except ValueError as e:
+                            raise ValueError(f"Segmento {i} inválido: erro ao converter timestamps: {e}")
+                    
+                    if total_duration <= 0:
+                        raise ValueError("Duração total do roteiro é zero ou negativa")
+                        
+                    # Atualiza metadados do roteiro no banco
+                    self.db.update_task_config(task_id, {
+                        'render_metadata': {
+                            'total_segments': len(segments),
+                            'total_duration': total_duration,
+                            'validation_timestamp': str(datetime.now())
+                        }
+                    }, wait=True)
+                    
+                    self.logger.log(f"Roteiro validado com sucesso: {len(segments)} segmentos, {total_duration:.2f}s", "SUCCESS", task_id)
+                    
+                except Exception as e:
+                    self.logger.log(f"Erro ao validar roteiro gerado: {e}", "ERROR", task_id, exc_info=True)
+                    self._task_done_handler(task_id, {
+                        'type': 'error',
+                        'message': f"Validação do roteiro falhou: {e}",
+                        'task_id': task_id
+                    })
+                    return
                 
                 # 2. Prepara a tarefa para renderização
                 if not self._prepare_render_task(task_id, script_path):

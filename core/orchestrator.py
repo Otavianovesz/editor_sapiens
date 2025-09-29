@@ -397,7 +397,8 @@ class Orchestrator:
                     preset=self.config.get("render_preset"), 
                     logger=self.logger, 
                     pq=pq, 
-                    task_id=task_id
+                    task_id=task_id,
+                    operation_mode=task_config.get('operation_mode', 'full_pipe')
                 )
             except Exception as e:
                 raise ProcessingError(f"Falha ao inicializar renderizador: {e}")

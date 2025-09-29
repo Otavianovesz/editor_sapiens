@@ -106,7 +106,8 @@ class DatabaseManager:
                 id TEXT PRIMARY KEY, video_path TEXT NOT NULL, status TEXT DEFAULT 'Aguardando',
                 use_visual_analysis INTEGER DEFAULT 1, transcription_mode TEXT DEFAULT 'whisper',
                 transcription_path TEXT, render_script_path TEXT, display_order REAL DEFAULT 0.0,
-                operation_mode TEXT DEFAULT 'full_pipe', added_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+                operation_mode TEXT DEFAULT 'full_pipe', added_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                render_metadata TEXT)''')
             conn.execute('''CREATE TABLE IF NOT EXISTS presets (name TEXT PRIMARY KEY, config TEXT NOT NULL)''')
             conn.execute('''CREATE TABLE IF NOT EXISTS log_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, level TEXT, message TEXT)''')

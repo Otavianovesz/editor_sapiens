@@ -80,30 +80,85 @@ class AudioTranscriber:
         self._active_task_id = None
 
     @classmethod
-    def cleanup(cls) -> None:
-        """Libera recursos do modelo Whisper de forma thread-safe."""
+    def cleanup(cls, logger=None, task_id=None) -> None:
+        """
+        Libera recursos do modelo Whisper de forma thread-safe com garantias extras.
+        
+        Args:
+            logger: Logger opcional para registrar o processo de limpeza
+            task_id: ID da tarefa para contexto de log
+        """
         with cls._model_lock:
             if cls._model_cache:
                 try:
-                    # Primeiro liberamos quaisquer recursos CUDA
+                    # 1. Tentativa de descarregamento CUDA
                     try:
                         import torch
-                        if hasattr(cls._model_cache, 'model') and hasattr(cls._model_cache.model, 'to'):
-                            cls._model_cache.model.to('cpu')
-                        torch.cuda.empty_cache()
+                        
+                        # 1.1 Move modelo para CPU primeiro
+                        if hasattr(cls._model_cache, 'model'):
+                            if hasattr(cls._model_cache.model, 'to'):
+                                try:
+                                    cls._model_cache.model.to('cpu')
+                                    if logger:
+                                        logger.log("Modelo movido para CPU", "DEBUG", task_id)
+                                except Exception as e:
+                                    if logger:
+                                        logger.log(f"Aviso ao mover modelo para CPU: {e}", "WARNING", task_id)
+                        
+                        # 1.2 Limpa cache CUDA
+                        if torch.cuda.is_available():
+                            try:
+                                torch.cuda.empty_cache()
+                                if logger:
+                                    logger.log("Cache CUDA limpo", "DEBUG", task_id)
+                            except Exception as e:
+                                if logger:
+                                    logger.log(f"Aviso ao limpar cache CUDA: {e}", "WARNING", task_id)
+                                    
+                    except ImportError:
+                        if logger:
+                            logger.log("PyTorch não disponível, pulando limpeza CUDA", "DEBUG", task_id)
                     except Exception as e:
-                        logging.warning(f"Aviso na limpeza CUDA: {e}")
+                        if logger:
+                            logger.log(f"Erro na limpeza CUDA: {e}", "WARNING", task_id)
 
-                    # Agora liberamos o modelo
+                    # 2. Desalocação do modelo
                     try:
+                        # 2.1 Remove referências internas primeiro
+                        if hasattr(cls._model_cache, 'model'):
+                            try:
+                                delattr(cls._model_cache, 'model')
+                            except Exception as e:
+                                if logger:
+                                    logger.log(f"Aviso ao remover atributo 'model': {e}", "WARNING", task_id)
+                        
+                        # 2.2 Deleta o objeto principal
                         del cls._model_cache
+                        cls._model_cache = None
+                        
+                        if logger:
+                            logger.log("Modelo Whisper desalocado com sucesso", "DEBUG", task_id)
+                            
                     except Exception as e:
-                        logging.warning(f"Aviso ao deletar modelo: {e}")
+                        if logger:
+                            logger.log(f"Erro ao deletar modelo: {e}", "WARNING", task_id)
+                        cls._model_cache = None  # Garante que será None mesmo em caso de erro
                     
-                    cls._model_cache = None
-                    logging.debug("Modelo Whisper liberado com sucesso")
+                    # 3. Força coleta de lixo
+                    try:
+                        import gc
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()  # Segunda passada de limpeza
+                    except Exception:
+                        pass  # Silencioso se falhar
+                        
                 except Exception as e:
-                    logging.warning(f"Erro ao liberar modelo Whisper: {e}")
+                    if logger:
+                        logger.log(f"Erro crítico na limpeza do modelo: {e}", "ERROR", task_id)
+                    cls._model_cache = None  # Última garantia
+                    raise  # Re-levanta para logging externo se necessário
 
     @classmethod
     def _load_model(cls, logger, config, task_id):
