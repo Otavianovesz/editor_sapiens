@@ -409,18 +409,51 @@ class App(ctk.CTk):
         task_id = task_config['id']
         
         # Log inicial detalhado do contexto da tarefa
-        self.logger.log(f"=== Iniciando Nova Tarefa ===", "INFO", task_id)
-        self.logger.log(f"ID: {task_id}", "DEBUG", task_id)
-        self.logger.log(f"Modo: {mode}", "INFO", task_id)
-        self.logger.log(f"Arquivo: {os.path.basename(task_config.get('video_path', 'N/A'))}", "INFO", task_id)
-        self.logger.log(f"Análise Visual: {'Sim' if task_config.get('use_visual_analysis') else 'Não'}", "INFO", task_id)
+        separator = "=" * 50
+        self.logger.log(separator, "INFO", task_id)
+        self.logger.log("INICIANDO NOVA TAREFA DE PROCESSAMENTO", "INFO", task_id)
+        self.logger.log(separator, "INFO", task_id)
         
+        # Informações básicas da tarefa
+        self.logger.log("\n[INFORMAÇÕES BÁSICAS]", "INFO", task_id)
+        self.logger.log(f"ID da Tarefa: {task_id}", "INFO", task_id)
+        self.logger.log(f"Modo de Operação: {mode}", "INFO", task_id)
+        self.logger.log(f"Arquivo de Entrada: {task_config.get('video_path', 'N/A')}", "INFO", task_id)
+        self.logger.log(f"Nome do Arquivo: {os.path.basename(task_config.get('video_path', 'N/A'))}", "INFO", task_id)
+        
+        # Configurações específicas do modo
+        self.logger.log("\n[CONFIGURAÇÕES DE PROCESSAMENTO]", "INFO", task_id)
+        if mode in ['full_pipe', 'sapiens_only']:
+            self.logger.log("Configurações de Transcrição:", "INFO", task_id)
+            self.logger.log(f"- Análise Visual: {'Ativada' if task_config.get('use_visual_analysis') else 'Desativada'}", "INFO", task_id)
+            self.logger.log(f"- Modo de Transcrição: {task_config.get('transcription_mode', 'whisper')}", "INFO", task_id)
+            if task_config.get('transcription_mode') == 'file':
+                self.logger.log(f"- Arquivo de Transcrição: {task_config.get('transcription_path', 'N/A')}", "INFO", task_id)
+                
+        if mode in ['full_pipe', 'render_only']:
+            self.logger.log("Configurações de Renderização:", "INFO", task_id)
+            if mode == 'render_only':
+                self.logger.log(f"- Script de Entrada: {task_config.get('render_script_path', 'N/A')}", "INFO", task_id)
+        
+        # Pipeline de execução previsto
+        self.logger.log("\n[PIPELINE DE EXECUÇÃO]", "INFO", task_id)
         if mode == 'full_pipe':
-            self.logger.log("Pipeline completo: Transcrição → Análise → Renderização", "INFO", task_id)
+            self.logger.log("Sequência: Transcrição → Análise → Renderização", "INFO", task_id)
+            self.logger.log("1. Transcrição do áudio (Whisper)", "INFO", task_id)
+            self.logger.log("2. Análise e processamento do texto", "INFO", task_id)
+            self.logger.log("3. Renderização do vídeo final", "INFO", task_id)
         elif mode == 'sapiens_only':
-            self.logger.log("Apenas roteirização: Transcrição → Análise", "INFO", task_id)
+            self.logger.log("Sequência: Transcrição → Análise", "INFO", task_id)
+            self.logger.log("1. Transcrição do áudio (Whisper)", "INFO", task_id)
+            self.logger.log("2. Análise e processamento do texto", "INFO", task_id)
         elif mode == 'render_only':
-            self.logger.log("Apenas renderização do roteiro existente", "INFO", task_id)
+            self.logger.log("Sequência: Renderização", "INFO", task_id)
+            self.logger.log("1. Renderização do vídeo a partir do script", "INFO", task_id)
+            
+        self.logger.log("\n[SISTEMA]", "INFO", task_id)
+        self.logger.log(f"Thread de Execução: {threading.current_thread().name}", "DEBUG", task_id)
+        self.logger.log(f"Timestamp de Início: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO", task_id)
+        self.logger.log(separator, "INFO", task_id)
         
         def send_progress(percentage, stage):
             """Helper para enviar atualizações de progresso."""

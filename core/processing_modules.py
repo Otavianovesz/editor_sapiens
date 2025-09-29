@@ -9,7 +9,8 @@ import threading
 import json
 import dataclasses
 import logging
-from typing import List, Any, Optional, Dict
+from typing import List, Any, Optional, Dict, ClassVar
+from threading import Lock
 
 from .config import Config
 from utils.logger import Logger
@@ -70,8 +71,8 @@ class MediaProcessor:
 class AudioTranscriber:
     """Responsável pela transcrição de áudio usando o modelo Whisper."""
     # Cache de modelo em nível de classe para Thread-Safety
-    _model_cache = None
-    _model_lock = threading.Lock()
+    _model_cache: ClassVar[Optional[Any]] = None
+    _model_lock: ClassVar[Lock] = Lock()
 
     def __init__(self, logger: Logger, config: Config):
         self.logger = logger
@@ -197,7 +198,8 @@ class AudioTranscriber:
                         self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
                         return []
                     
-                    progress = 11 + (segment.end / info.duration) * 39 if info.duration > 0 else 50
+                    # Pipeline: Extração (0-10%) -> Transcrição (10-50%) -> Visual (50-75%) -> Conteúdo (75-99%) -> Render (após 99%)
+                    progress = 10 + (segment.end / info.duration) * 40 if info.duration > 0 else 50
                     pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
                     
                     if hasattr(segment, "words") and segment.words:
@@ -307,7 +309,9 @@ class VisualAnalyzer:
     
                         # enviar progresso para UI
                         try:
-                            pq.put({'type': 'progress', 'stage': 'Análise Visual', 'percentage': 51 + (frame_idx / max(1, total_frames)) * 24, 'task_id': task_id})
+                            # Pipeline: Extração (0-10%) -> Transcrição (10-50%) -> Visual (50-75%) -> Conteúdo (75-99%) -> Render (após 99%)
+                            progress = 50 + (frame_idx / max(1, total_frames)) * 25
+                            pq.put({'type': 'progress', 'stage': 'Análise Visual', 'percentage': progress, 'task_id': task_id})
                         except Exception:
                             # não crítico, apenas continue
                             pass

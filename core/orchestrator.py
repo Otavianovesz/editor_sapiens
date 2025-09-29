@@ -166,16 +166,27 @@ class Orchestrator:
                 # Pipeline de transcrição com Whisper
                 media_processor = self._get_module('media')
                 transcriber = self._get_module('transcriber')
+                audio_path = None
                 
-                with self._manage_resource('media_processor', media_processor):
-                    audio_path = media_processor.extract_audio(task_config['video_path'], task_id)
-                    if not audio_path:
-                        raise ResourceError("Falha na extração de áudio")
+                try:
+                    with self._manage_resource('media_processor', media_processor):
+                        audio_path = media_processor.extract_audio(task_config['video_path'], task_id)
+                        if not audio_path:
+                            raise ResourceError("Falha na extração de áudio")
+                            
+                        with self._manage_resource('transcriber', transcriber):
+                            words = transcriber.transcribe(audio_path, pq, task_id, stop_event)
+                            
+                    if not words:
+                        raise ProcessingError("Transcrição não produziu resultados")
                         
-                    with self._manage_resource('transcriber', transcriber):
-                        words = transcriber.transcribe(audio_path, pq, task_id, stop_event)
-                if not words:
-                    raise ProcessingError("Transcrição não produziu resultados")
+                finally:
+                    # GARANTIA: Sempre limpa o arquivo de áudio temporário
+                    if media_processor:
+                        try:
+                            media_processor.cleanup()
+                        except Exception as e:
+                            self.logger.log(f"Aviso: Erro ao limpar arquivo de áudio temporário: {e}", "WARNING", task_id)
                     
             else:
                 # Carrega transcrição de um arquivo JSON externo
