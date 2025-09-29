@@ -50,8 +50,9 @@ if not hasattr(ctk, "CTkToolTip"):
 
 class App(ctk.CTk):
     """Classe principal da aplicação, responsável por toda a interface gráfica."""
-    def __init__(self):
+    def __init__(self, app_context=None):
         super().__init__()
+        self.app_context = app_context
         self.title("Editor Sapiens (Arconte)")
         self.geometry("1600x900")
         ctk.set_appearance_mode("dark")
@@ -62,6 +63,11 @@ class App(ctk.CTk):
         self.logger = Logger(self.log_queue, self.db)
         self.config = Config()
         self.orchestrator = Orchestrator(self.logger, self.config)
+        
+        # Registrar recursos no app_context se disponível
+        if self.app_context:
+            self.app_context.register_processor(self.orchestrator)
+            self.app_context.register_processor(self.db)
         def _thread_excepthook(args):
             # args é threading.ExceptHookArgs: (exc_type, exc_value, exc_traceback, thread)
             try:
@@ -204,13 +210,16 @@ class App(ctk.CTk):
             except Exception as e:
                 self.logger.log(f"Erro ao cancelar callbacks: {e}", "WARNING")
 
-            # 6. Limpa referências cíclicas
+            # 6. Limpa recursos via app_context se disponível
             try:
+                if self.app_context:
+                    self.app_context.cleanup()
+                # Limpa referências cíclicas
                 self.orchestrator = None
                 self.logger = None
                 self.db = None
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.log(f"Erro ao limpar recursos: {e}", "ERROR")
 
             # 7. Destrói a janela
             try:

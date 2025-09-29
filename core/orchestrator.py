@@ -36,8 +36,9 @@ class Orchestrator:
         self._validate_config()
         
     def _cleanup_resources(self, task_id: str):
-        """Limpa recursos de forma thread-safe."""
+        """Limpa recursos de forma thread-safe com proteção extra contra falhas."""
         with self._resources_lock:
+            # Primeiro identifica todos os recursos a serem limpos
             resources_to_clean = [
                 (resource_id, resource) 
                 for resource_id, resource in self._active_resources.items()
@@ -46,12 +47,29 @@ class Orchestrator:
             
             for resource_id, resource in resources_to_clean:
                 try:
+                    # Primeiro tenta liberar recursos CUDA/GPU
+                    if hasattr(resource, 'model') and hasattr(resource.model, 'to'):
+                        try:
+                            import torch
+                            resource.model.to('cpu')
+                            torch.cuda.empty_cache()
+                        except Exception as e:
+                            self.logger.log(f"Aviso na limpeza CUDA do recurso {resource_id}: {e}", "WARNING", task_id)
+                    
+                    # Agora chama o cleanup do recurso
                     if hasattr(resource, 'cleanup'):
-                        resource.cleanup()
+                        try:
+                            resource.cleanup()
+                        except Exception as e:
+                            self.logger.log(f"Erro ao limpar recurso {resource_id}: {e}", "WARNING", task_id)
+                    
+                    # Remove da lista de recursos ativos
                     self._active_resources.pop(resource_id, None)
                     self.logger.log(f"Recurso {resource_id} liberado com sucesso", "DEBUG", task_id)
                 except Exception as e:
-                    self.logger.log(f"Erro ao limpar recurso {resource_id}: {e}", "WARNING", task_id)
+                    self.logger.log(f"Erro crítico ao limpar recurso {resource_id}: {e}", "ERROR", task_id, exc_info=True)
+                    # Força remoção mesmo em caso de erro
+                    self._active_resources.pop(resource_id, None)
         
     def _validate_config(self) -> None:
         """Valida a configuração inicial."""
@@ -62,17 +80,48 @@ class Orchestrator:
             
     @contextmanager
     def _manage_resource(self, resource_id: str, resource: Any) -> Generator[Any, None, None]:
-        """Gerencia o ciclo de vida de um recurso."""
+        """Gerencia o ciclo de vida de um recurso com proteção extra contra falhas."""
+        task_id = resource_id.split('-')[0] if '-' in resource_id else 'Global'
+        
         try:
-            self._active_resources[resource_id] = resource
+            with self._resources_lock:
+                self._active_resources[resource_id] = resource
+            self.logger.log(f"Recurso {resource_id} registrado", "DEBUG", task_id)
             yield resource
+            
+        except Exception as e:
+            self.logger.log(f"Erro durante uso do recurso {resource_id}: {e}", "ERROR", task_id, exc_info=True)
+            raise
+            
         finally:
-            self._active_resources.pop(resource_id, None)
-            if hasattr(resource, 'cleanup'):
-                try:
-                    resource.cleanup()
-                except Exception as e:
-                    self.logger.log(f"Erro ao limpar recurso {resource_id}: {e}", "WARNING")
+            try:
+                # Primeiro tenta liberar recursos CUDA/GPU se existirem
+                if hasattr(resource, 'model') and hasattr(resource.model, 'to'):
+                    try:
+                        import torch
+                        resource.model.to('cpu')
+                        torch.cuda.empty_cache()
+                    except Exception as e:
+                        self.logger.log(f"Aviso na limpeza CUDA do recurso {resource_id}: {e}", "WARNING", task_id)
+                
+                # Chama o cleanup do recurso
+                if hasattr(resource, 'cleanup'):
+                    try:
+                        resource.cleanup()
+                    except Exception as e:
+                        self.logger.log(f"Erro ao limpar recurso {resource_id}: {e}", "WARNING", task_id)
+                
+                # Remove o recurso da lista de ativos
+                with self._resources_lock:
+                    self._active_resources.pop(resource_id, None)
+                    
+                self.logger.log(f"Recurso {resource_id} liberado com sucesso", "DEBUG", task_id)
+                
+            except Exception as e:
+                self.logger.log(f"Erro crítico ao limpar recurso {resource_id}: {e}", "ERROR", task_id, exc_info=True)
+                # Força remoção mesmo em caso de erro
+                with self._resources_lock:
+                    self._active_resources.pop(resource_id, None)
 
     def interrupt_current_task(self):
         """Interrompe a tarefa de renderização em andamento, se houver."""
@@ -123,13 +172,8 @@ class Orchestrator:
                     if not audio_path:
                         raise ResourceError("Falha na extração de áudio")
                         
-                    try:
-                        with self._manage_resource('transcriber', transcriber):
-                            words = transcriber.transcribe(audio_path, pq, task_id, stop_event)
-                    finally:
-                        # Garante limpeza do arquivo temporário mesmo em caso de erro
-                        media_processor.cleanup(audio_path, task_id)
-                        
+                    with self._manage_resource('transcriber', transcriber):
+                        words = transcriber.transcribe(audio_path, pq, task_id, stop_event)
                 if not words:
                     raise ProcessingError("Transcrição não produziu resultados")
                     
@@ -236,10 +280,10 @@ class Orchestrator:
                 )
                 
                 segments = content_analyzer.create_speech_segments(
-                    words=words,
+                    words=words, 
                     pq=pq,
                     use_visual=task_config.get('use_visual_analysis', False),
-                    visual_data=visual_data or [],  # Garante lista vazia se None
+                    visual_data=visual_data,
                     task_id=task_id,
                     stop_event=stop_event
                 )
@@ -388,5 +432,7 @@ class Orchestrator:
             # Garante limpeza final dos recursos
             self._cleanup_resources(task_id)
             
+            if not stop_event.is_set():
+                pq.put({'type': 'done', 'task_id': task_id})
             if not stop_event.is_set():
                 pq.put({'type': 'done', 'task_id': task_id})
