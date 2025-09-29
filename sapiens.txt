@@ -1,64 +1,735 @@
-Acho que conseguimos resolver parcialmente o problema. Observe a nova depuração:
-PS C:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens>  & 'c:\Users\otavi\AppData\Local\Programs\Python\Python311\python.exe' 'c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\launcher' '61294' '--' 'c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\main.py' 
+r\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'percentage'
+Exception in Tkinter callback
 Fatal Python error: Aborted
 
-Thread 0x000045a0 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\site-packages\tqdm\_monitor.py", line 60 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+Thread 0x00006ae4 (most recent call first):
+  File Traceback (most recent call last):
+"c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\site-packages\tqdm\_monitor.py", line 60 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+"  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+KeyError: 'percentage'
 
-Thread 0x00005560 (most recent call first):
-  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3o\editor_sapiens\ui\app.py", line 351 in _run_task_thread
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+Thread 0x0000550c (most recent call first):
+Exception in Tkinter callback  File "c:\U
+sers\otavi\OneDTraceback (most recent call last):
+rive\Documentos\Projetos_programa\xe7\xe3o\editor_sapiens\ui\app.py", line 354 in _run_task_thread
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py"  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, line 982 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line   File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
 
-Thread 0x00000254 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line 171 in get
-  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3o\editor_sapiens\core\database.py", line 67 in _writer_loop
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+Thread 0x00008dc8 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line   File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+171 in get
+  File KeyError: 'percentage'
+"c:\Exception in Tkinter callbackUsers\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3
+o\editor_sapiens\corTraceback (most recent call last):
+e\database.py", line 67 in _writer_loop
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
 
-Thread 0x00002f48 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 325 in _on_run
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+Thread 0x00001338 (most recent call first):
+  File "  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in   File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress      
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+wait
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 325 in _on_runKeyError: 'percentage'
 
-Thread 0x00007298 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 279 in _on_run
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
 
-Thread 0x00007008 (most recent call first):
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 227 in _read_line
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 245 in _on_run
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+Thread 0x00004fbc (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py"Exception in Tkinter callback, line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py"
+, line 629 in wait
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 279 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in Traceback (most recent call last):
+_bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
 
-Thread 0x00000de4 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line 180 in get
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 390 in _on_run
-  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+Thread 0x00009060 (most recent call first):
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 227 in _read_line
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 245 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File   File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+"c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py"  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, line 1002 in _bootstrap
 
-Thread 0x00002b94 (most recent call first):
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 2851 in _create
-  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py"Windows fatal exception: access violation
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+Thread 0x000001f8KeyError: 'percentage'
+ (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line 180 in get
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 390 in Exception in Tkinter callback_on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
 
+Thread 0x000059d0 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 2421 in report_callback_exception
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1687 in _report_exception
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1971 in __call__
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1504 in mainloop
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\site-packages\customtkinter\windows\ctk_tk.py", line 165 in mainloop
+  File "c:\Users\otavi\OneDrive\Docu
+mentos\Projetos_programa\xe7\xe3o\editor_sapiens\main.py", line 49 in Traceback (most recent call last):
+main
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3o\editor_  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+sapiens\main.py", line 57 in <module>
+  File "  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_runpy.py", line 118 in _run_code
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_runpy.py", line 127  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+ in _run_module_code
+  File "KeyError: 'percentage'
+c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_runpy.py", line 310 in run_path
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy/..\debugpy\server\cli.py", line 351 in run_file
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy/..\debugpy\server\cli.py", line 501 in main
+  File "Exception in Tkinter callbackc:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy\__main__.py", line 71 in <module>
+
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\runpy.py", line 88 in _run_code
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\runpy.py", line 198 in _run_module_as_main
+Traceback (most recent call last):
+
+Extension modules: _pydevd_bundle.pydevd_cython  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, PIL._imaging  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, av._core  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, KeyError: 'percentage'
+av.logging, av.bytesourceException in Tkinter callback, av.buffer        
+, av.audio.format, av.error, av.dictionary, av.container.pyio, av.utils, av.optionTraceback (most recent call last):
+, av.descriptor, av.format, av.stream  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, av.container.streams  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, av.sidedata.motionvectors  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, av.sidedata.sidedataKeyError: 'percentage'
+, av.opaque, av.packetException in Tkinter callback, av.container.input  
+, av.container.output, av.container.core, av.codec.context, av.video.format, av.video.reformatter, av.plane, av.video.plane, av.video.frameTraceback (most recent call last):
+, av.video.stream, av.codec.hwaccel  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, av.codec.codec  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, av.frame  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, av.audio.layoutKeyError: 'percentage'
+, av.audio.plane, av.audio.frameException in Tkinter callback, av.audio.stream
+, av.filter.link, av.filter.context, av.filter.graph, av.filter.filter, av.filter.loudnorm, av.audio.resampler, av.audio.codeccontextTraceback (most recent call last):
+, av.audio.fifo, av.bitstream, av.video.codeccontext  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, numpy.core._multiarray_umath  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit        
+    func(*args)
+, numpy.core._multiarray_tests  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, numpy.linalg._umath_linalgKeyError: 'percentage'
+, numpy.fft._pocketfft_internalException in Tkinter callback
+, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philoxTraceback (most recent call last):
+, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, torch._C  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, torch._C._dynamo.autograd_compiler  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, torch._C._dynamo.eval_frameKeyError: 'percentage'
+, torch._C._dynamo.guards, Exception in Tkinter callbacktorch._C._dynamo.utils
+, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._specialTraceback (most recent call last):
+, yaml._yaml, charset_normalizer.md  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 1967, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+, requests.packages.charset_normalizer.md  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 861, in callit
+    func(*args)
+, requests.packages.chardet.md  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\ui\app.py", line 446, in update_progress
+    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                         ~~~~~~^^^^^^^^^^^^^^
+, av.subtitles.stream (total: 76)KeyError: 'percentage'
+
+Exception in Tkinter callback
 PS C:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens>
