@@ -61,19 +61,36 @@ class App(ctk.CTk):
         def _thread_excepthook(args):
             # args é threading.ExceptHookArgs: (exc_type, exc_value, exc_traceback, thread)
             try:
-                logging.critical(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-            except Exception:
-                logging.exception("Falha ao logar exceção de thread.")
-            # tenta também enviar para o logger de UI (se disponível)
-            try:
+                # Log primário no arquivo de log
+                logging.critical(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", 
+                               exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+                
+                # Extrai o traceback completo
                 tb = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+                
+                # Tenta enviar para o logger de UI e progress_queue
                 if hasattr(self, "logger"):
-                    self.logger.log(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", "CRITICAL")
-                    self.logger.log(tb, "DEBUG")
-                else:
-                    logging.debug(tb)
-            except Exception:
-                logging.exception("Falha ao enviar exceção de thread para self.logger.")
+                    self.logger.log(f"Erro crítico em thread {args.thread.name}: {args.exc_value}", "CRITICAL")
+                    self.logger.log(f"Traceback completo:\n{tb}", "DEBUG")
+                    
+                    # Notifica a UI sobre o erro através da progress_queue
+                    try:
+                        if hasattr(self, "progress_queue"):
+                            self.progress_queue.put({
+                                'type': 'error',
+                                'message': f"Erro crítico em thread: {args.exc_value}",
+                                'task_id': getattr(args.thread, 'task_id', 'unknown')
+                            })
+                    except Exception:
+                        pass
+                
+                # Força uma atualização da UI para mostrar o erro
+                if hasattr(self, "after"):
+                    self.after(100, lambda: messagebox.showerror("Erro Crítico", 
+                             f"Ocorreu um erro crítico em uma thread:\n\n{args.exc_value}"))
+                
+            except Exception as e:
+                logging.exception("Falha ao processar exceção de thread")
         threading.excepthook = _thread_excepthook
 
         # Também reforçamos o excepthook global (main thread)
@@ -325,29 +342,56 @@ class App(ctk.CTk):
 
     def _run_task_thread(self, task_config):
         mode = task_config.get('operation_mode', 'full_pipe')
+        task_id = task_config['id']
+        
         try:
+            self.logger.log(f"Iniciando thread de tarefa no modo: {mode}", "DEBUG", task_id)
+            
             if mode in ['sapiens_only', 'full_pipe']:
                 self.orchestrator.run_sapiens_task(self.progress_queue, task_config, self.stop_event)
+                
             elif mode == 'render_only':
                 script_path = task_config.get('render_script_path')
-                if not script_path or not os.path.exists(script_path):
-                    raise ValueError("Arquivo de roteiro para render não foi encontrado ou é inválido.")
+                if not script_path:
+                    raise ValueError("Caminho do arquivo de roteiro não especificado")
+                    
+                if not os.path.exists(script_path):
+                    raise ValueError(f"Arquivo de roteiro não encontrado: {script_path}")
                 
                 # Validação do arquivo JSON para fornecer um erro mais claro.
                 try:
                     with open(script_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
-                    if not isinstance(data.get('segments'), list) or not data['segments']:
-                        raise ValueError("Roteiro inválido: a chave 'segments' está ausente ou a lista está vazia.")
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Falha ao ler o arquivo de roteiro (JSON mal formatado): {e}")
+                    raise ValueError(f"Arquivo de roteiro possui formato JSON inválido: {e}")
+                except Exception as e:
+                    raise ValueError(f"Erro ao ler arquivo de roteiro: {e}")
+                
+                if not isinstance(data.get('segments'), list):
+                    raise ValueError("Formato de roteiro inválido: propriedade 'segments' ausente ou não é uma lista")
+                    
+                if not data['segments']:
+                    raise ValueError("Roteiro não contém nenhum segmento de vídeo")
 
                 self.orchestrator.run_render_task(self.progress_queue, task_config, self.stop_event)
+                
             else:
-                raise ValueError(f"Modo de operação desconhecido: {mode}")
+                raise ValueError(f"Modo de operação inválido: {mode}")
+                
         except Exception as e:
-            self.logger.log(f"Erro na thread da tarefa: {e}", "CRITICAL", task_config['id'], exc_info=True)
-            self.progress_queue.put({'type': 'error', 'message': str(e), 'task_id': task_config['id']})
+            # Log detalhado do erro com stack trace completo
+            self.logger.log(f"Erro crítico na thread da tarefa: {e}", "CRITICAL", task_id, exc_info=True)
+            self.logger.log("Stack trace completo:\n" + "".join(traceback.format_exc()), "DEBUG", task_id)
+            
+            # Notifica a UI sobre o erro
+            self.progress_queue.put({
+                'type': 'error',
+                'message': str(e),
+                'task_id': task_id
+            })
+        finally:
+            # Garante que a thread será finalizada adequadamente
+            self.logger.log("Thread de tarefa finalizada.", "DEBUG", task_id)
 
     def _queue_done(self):
         self.is_running_task, self.current_task_id = False, None

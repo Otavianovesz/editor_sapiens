@@ -2,6 +2,7 @@
 
 import sys
 import logging
+import faulthandler
 from tkinter import messagebox
 
 def setup_logging():
@@ -20,6 +21,7 @@ def setup_logging():
 
 def main():
     """Ponto de entrada principal da aplicação."""
+    faulthandler.enable()  # Habilita captura de falhas nativas
     setup_logging()
 
     try:

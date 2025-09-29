@@ -101,6 +101,13 @@ class AudioTranscriber:
         # O filtro VAD (Voice Activity Detection) está ativado aqui, conforme solicitado.
         segments_gen, info = self.model.transcribe(path, language=lang, word_timestamps=True, vad_filter=True)
         
+        if info.duration <= 0:
+            self.logger.log("Duração inválida do áudio detectada.", "ERROR", task_id)
+            return []
+            
+        if not info.language or info.language_probability < 0.5:
+            self.logger.log(f"Aviso: Baixa confiança na detecção do idioma ({info.language}, {info.language_probability:.2f})", "WARNING", task_id)
+            
         self.logger.log(f"Idioma detectado: {info.language} (Probabilidade: {info.language_probability:.2f}), Duração: {info.duration:.2f}s", "INFO", task_id)
         
         # Otimização de memória: cria uma classe leve para armazenar apenas os dados
@@ -108,21 +115,29 @@ class AudioTranscriber:
         Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
         all_words = []
         
-        for segment in segments_gen:
-            if stop_event.is_set():
-                self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
-                return []
-            
-            progress = 11 + (segment.end / info.duration) * 39 if info.duration > 0 else 50
-            pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
-            
-            if hasattr(segment, "words") and segment.words:
-                # Cria cópias leves dos objetos de palavra para economizar memória.
-                for word_obj in segment.words:
-                    all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
+        try:
+            for segment in segments_gen:
+                if stop_event.is_set():
+                    self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
+                    return []
+                
+                progress = 11 + (segment.end / info.duration) * 39 if info.duration > 0 else 50
+                pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
+                
+                if hasattr(segment, "words") and segment.words:
+                    # Cria cópias leves dos objetos de palavra para economizar memória.
+                    for word_obj in segment.words:
+                        all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
 
-        self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
-        return all_words
+            if len(all_words) == 0:
+                self.logger.log("Nenhuma palavra foi transcrita. Possível problema com o áudio.", "ERROR", task_id)
+                return []
+
+            self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
+            return all_words
+        except Exception as e:
+            self.logger.log(f"Erro durante o processamento de segmentos: {e}", "ERROR", task_id, exc_info=True)
+            return []
 
 class VisualAnalyzer:
     """Responsável pela análise visual de gestos e olhar usando MediaPipe."""
