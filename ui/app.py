@@ -684,19 +684,21 @@ class App(ctk.CTk):
                 if not isinstance(segment, dict):
                     raise ValueError(f"Segmento {i} inválido: deve ser um objeto/dicionário")
                     
-                required_fields = ['start', 'end', 'text']
-                for field in required_fields:
-                    if field not in segment:
-                        raise ValueError(f"Segmento {i} inválido: campo '{field}' não encontrado")
-                        
-                if not isinstance(segment['start'], (int, float)):
-                    raise ValueError(f"Segmento {i} inválido: 'start' deve ser numérico")
+                # Valida start_time e end_time
+                if 'start_time' not in segment:
+                    raise ValueError(f"Segmento {i} inválido: campo 'start_time' não encontrado")
                     
-                if not isinstance(segment['end'], (int, float)):
-                    raise ValueError(f"Segmento {i} inválido: 'end' deve ser numérico")
+                if 'end_time' not in segment:
+                    raise ValueError(f"Segmento {i} inválido: campo 'end_time' não encontrado")
                     
-                if segment['start'] >= segment['end']:
-                    raise ValueError(f"Segmento {i} inválido: 'start' deve ser menor que 'end'")
+                try:
+                    start = float(segment['start_time'])
+                    end = float(segment['end_time'])
+                except ValueError:
+                    raise ValueError(f"Segmento {i} inválido: 'start_time' e 'end_time' devem ser numéricos")
+                    
+                if start >= end:
+                    raise ValueError(f"Segmento {i} inválido: 'start_time' deve ser menor que 'end_time'")
                     
             return data
             

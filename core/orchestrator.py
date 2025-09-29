@@ -176,6 +176,8 @@ class Orchestrator:
                             
                         with self._manage_resource('transcriber', transcriber):
                             words = transcriber.transcribe(audio_path, pq, task_id, stop_event)
+                            # Força a limpeza imediata dos recursos do modelo após a transcrição
+                            transcriber.cleanup(task_id)
                             
                     if not words:
                         raise ProcessingError("Transcrição não produziu resultados")

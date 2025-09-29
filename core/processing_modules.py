@@ -138,6 +138,50 @@ class AudioTranscriber:
                 logger.log(f"ERRO CRÍTICO ao baixar ou carregar modelo Whisper: {e}", "CRITICAL", task_id, exc_info=True)
                 raise
 
+    def cleanup(self, task_id: str = None):
+        """Desaloca explicitamente o modelo Whisper da memória/GPU, liberando recursos críticos."""
+        with self._model_lock:
+            if self._model_cache:
+                try:
+                    # Importação local para evitar dependências globais desnecessárias
+                    import torch 
+                    
+                    if hasattr(self._model_cache, 'model') and hasattr(self._model_cache.model, 'to'):
+                        try:
+                            # Primeiro move o modelo para CPU se estiver em CUDA
+                            self._model_cache.model.to('cpu')
+                            self.logger.log("Modelo movido para CPU antes da desalocação.", "DEBUG", task_id)
+                        except Exception as e:
+                            self.logger.log(f"Aviso ao mover modelo para CPU: {e}", "WARNING", task_id)
+                    
+                    # Força liberação de VRAM CUDA
+                    if torch.cuda.is_available():
+                        try:
+                            torch.cuda.empty_cache()
+                            self.logger.log("Cache CUDA limpo com sucesso.", "DEBUG", task_id)
+                        except Exception as e:
+                            self.logger.log(f"Aviso ao limpar cache CUDA: {e}", "WARNING", task_id)
+                    
+                    # Deleta o objeto do modelo
+                    try:
+                        del self._model_cache
+                        self._model_cache = None
+                        self.logger.log("Objeto do modelo Whisper limpo da memória.", "DEBUG", task_id)
+                    except Exception as e:
+                        self.logger.log(f"Aviso ao deletar modelo: {e}", "WARNING", task_id)
+
+                except Exception as e:
+                    # Em caso de falha, garante que o modelo seja marcado como None
+                    self._model_cache = None
+                    self.logger.log(f"Falha na desalocação otimizada do modelo Whisper: {e}", "WARNING", task_id)
+                    
+                # Força coleta de lixo após limpeza
+                try:
+                    import gc
+                    gc.collect()
+                except Exception:
+                    pass
+
     def transcribe(self, path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Any]:
         """
         Transcreve um arquivo de áudio usando o modelo Whisper.
@@ -198,8 +242,8 @@ class AudioTranscriber:
                         self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
                         return []
                     
-                    # Pipeline: Extração (0-10%) -> Transcrição (10-50%) -> Visual (50-75%) -> Conteúdo (75-99%) -> Render (após 99%)
-                    progress = 10 + (segment.end / info.duration) * 40 if info.duration > 0 else 50
+                    # Pipeline: Extração (0-5%) -> Transcrição (5-15%) -> Visual (15-20%) -> Conteúdo (20-25%) -> Render (25-99%)
+                    progress = 5 + (segment.end / info.duration) * 10 if info.duration > 0 else 15
                     pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
                     
                     if hasattr(segment, "words") and segment.words:
@@ -309,8 +353,8 @@ class VisualAnalyzer:
     
                         # enviar progresso para UI
                         try:
-                            # Pipeline: Extração (0-10%) -> Transcrição (10-50%) -> Visual (50-75%) -> Conteúdo (75-99%) -> Render (após 99%)
-                            progress = 50 + (frame_idx / max(1, total_frames)) * 25
+                            # Pipeline: Extração (0-5%) -> Transcrição (5-15%) -> Visual (15-20%) -> Conteúdo (20-25%) -> Render (25-99%)
+                            progress = 15 + (frame_idx / max(1, total_frames)) * 5
                             pq.put({'type': 'progress', 'stage': 'Análise Visual', 'percentage': progress, 'task_id': task_id})
                         except Exception:
                             # não crítico, apenas continue
@@ -408,7 +452,7 @@ class ContentAnalyzer:
         for i in range(n - 1):
             if stop_event.is_set(): return []
             
-            pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': 76 + (i / n) * 20, 'task_id': task_id})
+            pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': 20 + (i / n) * 5, 'task_id': task_id})
             
             cur, nxt = words[i], words[i+1]
             pause = nxt.start - cur.end
