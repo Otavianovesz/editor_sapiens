@@ -105,7 +105,13 @@ class VideoRenderer:
             if seg['end'] <= seg['start']: continue
             
             clip_path = os.path.join(temp_dir, f"clip_{i:04d}.mp4")
-            stream = ffmpeg.input(self.source_path, ss=seg['start'], to=seg['end']).output(clip_path, c='copy')
+            stream = ffmpeg.input(self.source_path, ss=seg['start'], to=seg['end'])
+            stream = ffmpeg.output(stream, clip_path,
+                       vcodec='libx264',
+                       preset='veryfast',
+                       crf='23',
+                       acodec='aac',
+                       strict='experimental')
             args = ffmpeg.compile(stream, overwrite_output=True)
             result = subprocess.run(args, capture_output=True, creationflags=creation_flags)
             

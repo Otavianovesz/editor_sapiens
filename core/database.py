@@ -142,8 +142,34 @@ class DatabaseManager:
             if changed > 0: logging.warning(f"{changed} tarefa(s) foram recuperadas.")
         else: logging.error(f"Falha ao recuperar tarefas: {res.get('error')}")
 
-    def close(self):
+def close(self):
+    """
+    Fecha o manager do DB de forma ordenada:
+    1) coloca o sentinel (None) para sinalizar parada ao writer thread;
+    2) aguarda a fila ser processada (join);
+    3) aguarda a thread encerrar;
+    4) fecha a conexão de leitura.
+    """
+    try:
+        logging.info("DatabaseManager: sinalizando thread de escrita para encerrar...")
+        # sinaliza para encerrar após processar tudo que já está na fila
         self._write_queue.put(None)
-        self._writer_thread.join(timeout=2)
+
+        # aguarda a fila ser totalmente processada (task_done em writer loop)
+        try:
+            self._write_queue.join()
+        except Exception as e:
+            logging.warning(f"DatabaseManager: erro ao aguardar join da fila: {e}")
+
+        # aguarda o término da thread de escrita
+        self._writer_thread.join(timeout=10)
+    except Exception as e:
+        logging.warning(f"DatabaseManager: erro durante close(): {e}", exc_info=True)
+    finally:
         if self._read_conn:
-            self._read_conn.close()
+            try:
+                self._read_conn.close()
+                logging.info("DatabaseManager: conexão de leitura fechada.")
+            except Exception as e:
+                logging.warning(f"DatabaseManager: falha ao fechar conexão de leitura: {e}")
+
