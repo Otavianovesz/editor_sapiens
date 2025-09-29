@@ -146,15 +146,15 @@ class VisualAnalyzer:
         self.config = config
         self.pose_model = None
 
-def _init_model(self, task_id):
-    try:
-        import mediapipe as mp
-    except ImportError:
-        self.logger.log("Módulo 'mediapipe' não encontrado! Instale com 'pip install mediapipe'", "CRITICAL", task_id)
-        raise
-    self.logger.log("Inicializando modelo MediaPipe Pose...", "INFO", task_id)
-    # guardamos o módulo mp apenas; a instância do Pose será usada como context manager
-    self._mp = mp
+    def _init_model(self, task_id):
+        try:
+            import mediapipe as mp
+        except ImportError:
+            self.logger.log("Módulo 'mediapipe' não encontrado! Instale com 'pip install mediapipe'", "CRITICAL", task_id)
+            raise
+        self.logger.log("Inicializando modelo MediaPipe Pose...", "INFO", task_id)
+        # guardamos o módulo mp apenas; a instância do Pose será usada como context manager
+        self._mp = mp
 
 def analyze_video_in_single_pass(self, video_path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Dict]:
     """
@@ -263,8 +263,20 @@ class ContentAnalyzer:
         self.config = config
 
     def create_speech_segments(self, words, pq, use_visual, visual_data, task_id, stop_event):
+        """Cria segmentos de fala a partir das palavras transcritas."""
+        # Validação robusta de entrada
         if not words:
             self.logger.log("Nenhuma palavra fornecida para análise de conteúdo.", "WARNING", task_id)
+            return []
+
+        # Garante que visual_data seja uma lista mesmo quando desabilitado
+        if visual_data is None:
+            visual_data = []
+            self.logger.log("visual_data é None, usando lista vazia", "WARNING", task_id)
+            
+        # Validação de tipos
+        if not isinstance(words, list) or not all(hasattr(w, 'start') and hasattr(w, 'end') and hasattr(w, 'word') for w in words):
+            self.logger.log("Formato inválido de palavras fornecidas", "ERROR", task_id)
             return []
             
         self.logger.log(f"Analisando {len(words)} palavras para criar segmentos de corte...", "INFO", task_id)

@@ -32,7 +32,26 @@ class Orchestrator:
         self.config = config
         self.current_renderer: Optional[VideoRenderer] = None
         self._active_resources: Dict[str, Any] = {}
+        self._resources_lock = threading.Lock()  # Lock para sincronização de recursos
         self._validate_config()
+        
+    def _cleanup_resources(self, task_id: str):
+        """Limpa recursos de forma thread-safe."""
+        with self._resources_lock:
+            resources_to_clean = [
+                (resource_id, resource) 
+                for resource_id, resource in self._active_resources.items()
+                if task_id in resource_id
+            ]
+            
+            for resource_id, resource in resources_to_clean:
+                try:
+                    if hasattr(resource, 'cleanup'):
+                        resource.cleanup()
+                    self._active_resources.pop(resource_id, None)
+                    self.logger.log(f"Recurso {resource_id} liberado com sucesso", "DEBUG", task_id)
+                except Exception as e:
+                    self.logger.log(f"Erro ao limpar recurso {resource_id}: {e}", "WARNING", task_id)
         
     def _validate_config(self) -> None:
         """Valida a configuração inicial."""
@@ -83,8 +102,13 @@ class Orchestrator:
             raise ValidationError(f"Modo de transcrição inválido. Use: {valid_modes}")
 
     def run_sapiens_task(self, pq: queue.Queue, task_config: dict, stop_event: threading.Event):
-        """Executa o pipeline completo de análise e geração de roteiro."""
+        """
+        Executa o pipeline completo de análise e geração de roteiro com gerenciamento
+        seguro de recursos e threads.
+        """
         task_id = task_config['id']
+        thread_name = threading.current_thread().name
+        self.logger.log(f"Iniciando pipeline Sapiens na thread {thread_name}", "DEBUG", task_id)
         
         try:
             self._validate_task_config(task_config)
@@ -131,42 +155,62 @@ class Orchestrator:
 
             self.logger.log("Iniciando etapa de análise...", "INFO", task_id)
 
-            # Gerenciamento da análise visual
+            # Gerenciamento da análise visual com tratamento robusto de erros
             visual_data = []
             
-            if task_config.get('use_visual_analysis'):
-                self.logger.log("Iniciando análise visual...", "INFO", task_id)
-                visual_analyzer = self._get_module('visual')
-                
-                with self._manage_resource('visual_analyzer', visual_analyzer):
-                    try:
-                        visual_data = visual_analyzer.analyze_video_in_single_pass(
-                            task_config['video_path'], pq, task_id, stop_event)
+            try:
+                if task_config.get('use_visual_analysis'):
+                    self.logger.log("Iniciando análise visual...", "INFO", task_id)
+                    visual_analyzer = self._get_module('visual')
+                    
+                    if not visual_analyzer:
+                        raise RuntimeError("Falha ao inicializar analisador visual")
+                    
+                    with self._manage_resource('visual_analyzer', visual_analyzer):
+                        try:
+                            visual_data = visual_analyzer.analyze_video_in_single_pass(
+                                task_config['video_path'], pq, task_id, stop_event)
                             
-                        if not visual_data:
+                            if not visual_data:
+                                self.logger.log(
+                                    "Análise visual não produziu dados. Usando lista vazia.", 
+                                    "WARNING", task_id
+                                )
+                                visual_data = []
+                        except Exception as e:
                             self.logger.log(
-                                "Análise visual não produziu dados. Usando lista vazia.", 
-                                "WARNING", task_id
+                                f"Erro durante análise visual: {e}. Continuando sem dados visuais.", 
+                                "WARNING", task_id, exc_info=True
                             )
                             visual_data = []
-                            
-                    except Exception as e:
-                        self.logger.log(
-                            f"Erro durante análise visual: {e}. Continuando sem dados visuais.", 
-                            "WARNING", task_id, exc_info=True
-                        )
-                        visual_data = []
-            else:
-                self.logger.log(
-                    "Análise visual desativada - usando lista vazia para dados visuais.", 
-                    "INFO", task_id
-                )
+                else:
+                    self.logger.log(
+                        "Análise visual desativada - continuando sem análise visual", 
+                        "INFO", task_id
+                    )
+                
+                # Garantir progresso mesmo sem análise visual
                 pq.put({
                     'type': 'progress', 
                     'stage': 'Análise', 
                     'percentage': 75, 
                     'task_id': task_id
                 })
+                
+                # Garantir que visual_data é sempre uma lista
+                visual_data = list(visual_data or [])
+                
+                self.logger.log(
+                    f"Preparando para próxima etapa com {len(visual_data)} pontos de dados visuais", 
+                    "INFO", task_id
+                )
+                
+            except Exception as e:
+                self.logger.log(
+                    f"Erro crítico durante análise visual: {e}", 
+                    "ERROR", task_id, exc_info=True
+                )
+                visual_data = []  # Garante continuidade mesmo após erro
                 
             # Garante que visual_data seja sempre uma lista
             visual_data = list(visual_data or [])
@@ -181,11 +225,32 @@ class Orchestrator:
             if stop_event.is_set():
                 raise InterruptedError("Processo interrompido pelo usuário.")
 
-            segments = self._get_module('content').create_speech_segments(
-                words, pq, task_config.get('use_visual_analysis'), visual_data, task_id, stop_event)
-            
-            if not segments:
-                raise RuntimeError("Nenhum segmento de fala foi criado após a análise.")
+            try:
+                content_analyzer = self._get_module('content')
+                if not content_analyzer:
+                    raise RuntimeError("Falha ao obter módulo de análise de conteúdo")
+
+                self.logger.log(
+                    f"Iniciando análise de conteúdo com análise visual {'habilitada' if task_config.get('use_visual_analysis') else 'desabilitada'}",
+                    "INFO", task_id
+                )
+                
+                segments = content_analyzer.create_speech_segments(
+                    words=words,
+                    pq=pq,
+                    use_visual=task_config.get('use_visual_analysis', False),
+                    visual_data=visual_data or [],  # Garante lista vazia se None
+                    task_id=task_id,
+                    stop_event=stop_event
+                )
+                
+                if not segments:
+                    raise RuntimeError("Nenhum segmento de fala foi criado após a análise.")
+                    
+                self.logger.log(f"Análise de conteúdo concluída com sucesso: {len(segments)} segmentos criados", "SUCCESS", task_id)
+            except Exception as e:
+                self.logger.log(f"Erro durante análise de conteúdo: {str(e)}", "ERROR", task_id, exc_info=True)
+                raise
             
             if stop_event.is_set():
                 raise InterruptedError("Processo interrompido pelo usuário.")
@@ -244,18 +309,84 @@ class Orchestrator:
                     )
 
     def run_render_task(self, pq: queue.Queue, task_config: dict, stop_event: threading.Event):
-        """Executa apenas a tarefa de renderização de vídeo a partir de um roteiro."""
+        """
+        Executa a tarefa de renderização de vídeo a partir de um roteiro,
+        com gerenciamento seguro de recursos e tratamento de erros.
+        """
         task_id = task_config['id']
-        output_path = os.path.splitext(task_config['video_path'])[0] + "_editado.mp4"
-        renderer = VideoRenderer(
-            source_path=task_config['video_path'], 
-            json_path=task_config.get('render_script_path', ''), 
-            output_path=output_path, 
-            preset=self.config.get("render_preset"), 
-            logger=self.logger, 
-            pq=pq, 
-            task_id=task_id
-        )
-        self.current_renderer = renderer
-        renderer.run(stop_event)
-        self.current_renderer = None
+        thread_name = threading.current_thread().name
+        renderer = None
+        
+        try:
+            self.logger.log(f"Iniciando renderização na thread {thread_name}", "DEBUG", task_id)
+            
+            # Garante limpeza de recursos anteriores antes de iniciar
+            self._cleanup_resources(task_id)
+            
+            # Validação do arquivo de roteiro
+            script_path = task_config.get('render_script_path', '')
+            if not script_path or not os.path.exists(script_path):
+                raise ResourceError(f"Arquivo de roteiro não encontrado: {script_path}")
+            
+            # Preparação do caminho de saída
+            output_path = os.path.splitext(task_config['video_path'])[0] + "_editado.mp4"
+            
+            # Criação do renderizador com proteção contra erros
+            try:
+                renderer = VideoRenderer(
+                    source_path=task_config['video_path'], 
+                    json_path=script_path, 
+                    output_path=output_path, 
+                    preset=self.config.get("render_preset"), 
+                    logger=self.logger, 
+                    pq=pq, 
+                    task_id=task_id
+                )
+            except Exception as e:
+                raise ProcessingError(f"Falha ao inicializar renderizador: {e}")
+            
+            # Atualização thread-safe do renderizador atual
+            with self._resources_lock:
+                self.current_renderer = renderer
+            
+            try:
+                renderer.run(stop_event)
+                if stop_event.is_set():
+                    raise InterruptedError("Renderização interrompida pelo usuário")
+            except Exception as e:
+                raise ProcessingError(f"Erro durante renderização: {e}")
+                
+        except InterruptedError as e:
+            self.logger.log(str(e), "WARNING", task_id)
+            pq.put({
+                'type': 'interrupted',
+                'message': str(e),
+                'task_id': task_id
+            })
+            
+        except (ResourceError, ProcessingError) as e:
+            self.logger.log(f"Erro na renderização: {e}", "ERROR", task_id, exc_info=True)
+            pq.put({
+                'type': 'error',
+                'message': str(e),
+                'task_id': task_id
+            })
+            
+        except Exception as e:
+            self.logger.log(f"Erro fatal na renderização: {e}", "CRITICAL", task_id, exc_info=True)
+            pq.put({
+                'type': 'error',
+                'message': f"Erro fatal: {str(e)}",
+                'task_id': task_id
+            })
+            
+        finally:
+            # Limpa o renderizador atual de forma thread-safe
+            with self._resources_lock:
+                self.current_renderer = None
+            
+            # Garante limpeza final dos recursos
+            self._cleanup_resources(task_id)
+            
+            if not stop_event.is_set():
+                pq.put({'type': 'done', 'task_id': task_id})

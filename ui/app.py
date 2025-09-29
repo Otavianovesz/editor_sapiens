@@ -5,13 +5,16 @@ import sys
 import uuid
 import queue
 import threading
+from typing import Dict, Any, Optional, List
 import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk, Menu
 import traceback
 import logging
-import threading
-import sys
+from threading import Lock
+
+# Importa constantes globais
+from utils.constants import *
 
 # Importa módulos do projeto
 from core.database import DatabaseManager
@@ -399,35 +402,149 @@ class App(ctk.CTk):
         self._load_and_display_queue()
 
     def _process_queues(self):
+        """
+        Processa as filas de log e progresso de forma thread-safe.
+        """
+        if not self.winfo_exists():
+            return
+            
         try:
-            while msg := self.log_queue.get_nowait(): self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", msg); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
-        except queue.Empty: pass
-        try:
-            while q_item := self.progress_queue.get_nowait():
-                if q_item['type'] == 'progress': self._update_tree_item(q_item['task_id'], {'Progresso': self._text_progress_bar(q_item['percentage']), 'Status': f"⚙️ {q_item.get('stage', STATUS_PROCESSING)}"})
-                elif q_item['type'] in ['error', 'interrupted', 'done']: self._task_done_handler(q_item['task_id'], q_item)
-                elif q_item['type'] == 'sapiens_done': self._sapiens_done_handler(q_item['task_id'], q_item)
-        except queue.Empty: pass
-        self.after(100, self._process_queues)
+            # Processa logs em lote para reduzir atualizações da UI
+            logs = []
+            while True:
+                try:
+                    logs.append(self.log_queue.get_nowait())
+                except queue.Empty:
+                    break
+                    
+            if logs:
+                try:
+                    self.log_textbox.configure(state="normal")
+                    for msg in logs:
+                        self.log_textbox.insert("end", msg)
+                    self.log_textbox.see("end")
+                    self.log_textbox.configure(state="disabled")
+                except Exception as e:
+                    logging.error(f"Erro ao processar logs: {e}", exc_info=True)
+            
+            # Processa itens da fila de progresso
+            while True:
+                try:
+                    q_item = self.progress_queue.get_nowait()
+                    task_id = q_item.get('task_id')
+                    
+                    if not task_id:
+                        continue
+                        
+                    if q_item['type'] == 'progress':
+                        def update_progress():
+                            if not self.winfo_exists():
+                                return
+                            self._update_tree_item(
+                                task_id,
+                                {
+                                    'Progresso': self._text_progress_bar(q_item['percentage']),
+                                    'Status': f"⚙️ {q_item.get('stage', STATUS_PROCESSING)}"
+                                }
+                            )
+                        self.after(0, update_progress)
+                        
+                    elif q_item['type'] in ['error', 'interrupted', 'done']:
+                        self.after(0, lambda: self._task_done_handler(task_id, q_item))
+                        
+                    elif q_item['type'] == 'sapiens_done':
+                        self.after(0, lambda: self._sapiens_done_handler(task_id, q_item))
+                        
+                except queue.Empty:
+                    break
+                except Exception as e:
+                    logging.error(f"Erro ao processar item da fila: {e}", exc_info=True)
+                    
+        except Exception as e:
+            logging.error(f"Erro em _process_queues: {e}", exc_info=True)
+        finally:
+            # Agenda próxima execução
+            if self.winfo_exists():
+                self.after(100, self._process_queues)
 
-    def _task_done_handler(self, task_id, q_item):
-        status_map = {'error': STATUS_ERROR, 'interrupted': STATUS_INTERRUPTED, 'done': STATUS_COMPLETED}
-        self.db.update_task_status(task_id, status_map[q_item['type']])
-        self.is_running_task = False
-        if not self.stop_event.is_set(): self.after(500, self._start_next_task)
-        else: self._queue_done()
-        self._load_and_display_queue()
+    def _task_done_handler(self, task_id: str, q_item: Dict[str, Any]):
+        """
+        Manipula a conclusão de uma tarefa de forma thread-safe.
+        """
+        try:
+            # 1. Atualiza o status no banco de dados
+            status_map = {
+                'error': STATUS_ERROR,
+                'interrupted': STATUS_INTERRUPTED,
+                'done': STATUS_COMPLETED
+            }
+            self.db.update_task_status(task_id, status_map[q_item['type']])
+            
+            # 2. Atualiza o estado interno de forma thread-safe
+            with threading.Lock():
+                self.is_running_task = False
+            
+            # 3. Agenda atualizações da UI com delays seguros
+            if not self.stop_event.is_set():
+                # Primeiro agenda a atualização da UI
+                self.after(50, lambda: self._safe_update_ui(task_id))
+                # Depois agenda o início da próxima tarefa
+                self.after(100, self._start_next_task)
+            else:
+                # Em caso de parada, primeiro atualiza UI, depois finaliza
+                self.after(50, lambda: self._safe_update_ui(task_id))
+                self.after(100, self._queue_done)
+                
+        except Exception as e:
+            self.logger.log(f"Erro em _task_done_handler: {e}", "ERROR", task_id, exc_info=True)
+            
+    def _safe_update_ui(self, task_id: str):
+        """
+        Método thread-safe para atualizar a UI.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+            self._load_and_display_queue()
+        except Exception as e:
+            self.logger.log(f"Erro ao atualizar UI: {e}", "ERROR", task_id, exc_info=True)
 
     def _sapiens_done_handler(self, task_id, q_item):
+        """Manipula a conclusão do pipeline Sapiens com transição segura para renderização."""
         task_config = self.db.get_tasks_by_ids([task_id])[0]
+        
         if task_config.get('operation_mode') == 'full_pipe':
-            self.logger.log(f"Pipeline 'Sapiens' concluído. Roteiro gerado. Iniciando renderização...", "INFO", task_id)
+            self.logger.log(f"Pipeline 'Sapiens' concluído. Preparando para renderização...", "INFO", task_id)
+            
+            # 1. Atualiza configuração e status
             self.db.update_task_config(task_id, {'render_script_path': q_item['script_path']}, wait=True)
             self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
             self._load_and_display_queue()
+            
+            # 2. Obtém configuração atualizada
             updated_task = self.db.get_tasks_by_ids([task_id])[0]
-            threading.Thread(target=self.orchestrator.run_render_task, args=(self.progress_queue, updated_task, self.stop_event), daemon=True).start()
-        else: self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
+            
+            # 3. Função para iniciar renderização de forma segura
+            def start_render_safe():
+                try:
+                    self.logger.log("Iniciando thread de renderização...", "INFO", task_id)
+                    render_thread = threading.Thread(
+                        target=self.orchestrator.run_render_task,
+                        args=(self.progress_queue, updated_task, self.stop_event),
+                        daemon=True,
+                        name=f"RenderThread-{task_id[:8]}"
+                    )
+                    render_thread.start()
+                except Exception as e:
+                    self.logger.log(f"Erro ao iniciar renderização: {e}", "ERROR", task_id, exc_info=True)
+                    self._task_done_handler(task_id, {'type': 'error', 'task_id': task_id, 'message': str(e)})
+            
+            # 4. Agenda o início da renderização com atraso de 100ms
+            self.logger.log("Agendando início da renderização com atraso de segurança...", "DEBUG", task_id)
+            self.after(100, start_render_safe)
+            
+        else:
+            self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
 
     def _load_and_display_queue(self):
         selection = self.tree.selection(); valid_selection = [s for s in selection if self.tree.exists(s)]

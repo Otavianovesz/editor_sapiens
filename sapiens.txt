@@ -1,0 +1,64 @@
+Acho que conseguimos resolver parcialmente o problema. Observe a nova depuração:
+PS C:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens>  & 'c:\Users\otavi\AppData\Local\Programs\Python\Python311\python.exe' 'c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\launcher' '61294' '--' 'c:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens\main.py' 
+Fatal Python error: Aborted
+
+Thread 0x000045a0 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\site-packages\tqdm\_monitor.py", line 60 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+
+Thread 0x00005560 (most recent call first):
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3o\editor_sapiens\ui\app.py", line 351 in _run_task_thread
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+
+Thread 0x00000254 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line 171 in get
+  File "c:\Users\otavi\OneDrive\Documentos\Projetos_programa\xe7\xe3o\editor_sapiens\core\database.py", line 67 in _writer_loop
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydev_bundle\pydev_monkey.py", line 1131 in __call__
+
+Thread 0x00002f48 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 325 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00007298 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\pydevd.py", line 279 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00007008 (most recent call first):
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 227 in _read_line
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 245 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00000de4 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\queue.py", line 180 in get
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_comm.py", line 390 in _on_run
+  File "c:\Users\otavi\.vscode\extensions\ms-python.debugpy-2025.10.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_daemon_thread.py", line 53 in run
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00002b94 (most recent call first):
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py", line 2851 in _create
+  File "c:\Users\otavi\AppData\Local\Programs\Python\Python311\Lib\tkinter\__init__.py"Windows fatal exception: access violation
+
+PS C:\Users\otavi\OneDrive\Documentos\Projetos_programação\editor_sapiens>
