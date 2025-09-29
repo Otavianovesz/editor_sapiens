@@ -5,6 +5,7 @@ import sys
 import uuid
 import queue
 import threading
+import datetime
 from typing import Dict, Any, Optional, List
 import json
 import customtkinter as ctk
@@ -134,7 +135,6 @@ class App(ctk.CTk):
             import traceback as _tb
             stack = "".join(_tb.format_stack())
             self.logger.log("Fechando a aplicação... (invocado _on_closing)", "INFO")
-            # registra a stack para entender quem chamou
             self.logger.log("Stack do _on_closing:\n" + stack, "DEBUG")
         except Exception:
             logging.exception("Falha ao registrar stack no _on_closing.")
@@ -144,7 +144,6 @@ class App(ctk.CTk):
             try:
                 answer = messagebox.askyesno("Sair", "Tarefa em andamento. Deseja realmente sair?")
             except Exception:
-                # se messagebox falhar por algum motivo, assume NÃO para evitar fechar à força
                 self.logger.log("Falha ao mostrar diálogo de confirmação; cancelando fechamento.", "WARNING")
                 return
 
@@ -152,35 +151,85 @@ class App(ctk.CTk):
                 self.logger.log("Fechamento cancelado pelo usuário (tarefa em andamento).", "INFO")
                 return
 
-            # usuário confirmou: sinaliza parada e interrompe a tarefa
-            try:
-                self.stop_event.set()
-                self.orchestrator.interrupt_current_task()
-            except Exception as e:
-                self.logger.log(f"Erro ao tentar interromper tarefa: {e}", "ERROR")
-
-        # Se chegou aqui, pode fechar com segurança (ou foi chamado com force=True)
+        # Inicia processo de finalização segura
         try:
-            # garante que todas as escritas pendentes no DB sejam concluídas
-            if hasattr(self.db, "_write_queue") and hasattr(self.db, "_writer_thread"):
+            # 1. Sinaliza parada global
+            self.stop_event.set()
+            
+            # 2. Interrompe tarefas ativas
+            if self.is_running_task:
                 try:
-                    self.db._write_queue.join()
-                except Exception:
-                    pass
+                    self.orchestrator.interrupt_current_task()
+                    # Aguarda um pouco para a thread terminar
+                    import time
+                    time.sleep(0.5)
+                except Exception as e:
+                    self.logger.log(f"Erro ao interromper tarefa: {e}", "ERROR")
 
-            # fecha o DB de forma tolerante
+            # 3. Limpa filas
             try:
+                while True:
+                    try:
+                        self.progress_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                while True:
+                    try:
+                        self.log_queue.get_nowait()
+                    except queue.Empty:
+                        break
+            except Exception as e:
+                self.logger.log(f"Erro ao limpar filas: {e}", "WARNING")
+
+            # 4. Finaliza o banco de dados
+            try:
+                if hasattr(self.db, "_write_queue"):
+                    # Sinaliza para a thread de escrita parar
+                    self.db._write_queue.put(None)
+                    # Aguarda thread terminar (com timeout)
+                    if hasattr(self.db, "_writer_thread"):
+                        self.db._writer_thread.join(timeout=2.0)
                 self.db.close()
             except Exception as e:
-                self.logger.log(f"Falha ao fechar DB durante o encerramento: {e}", "WARNING")
+                self.logger.log(f"Erro ao finalizar banco de dados: {e}", "ERROR")
 
-            # finalmente destrói a janela principal
+            # 5. Cancela callbacks pendentes
             try:
+                pending = self.tk.call('after', 'info')
+                for event_id in pending:
+                    try:
+                        self.after_cancel(event_id)
+                    except Exception:
+                        pass
+            except Exception as e:
+                self.logger.log(f"Erro ao cancelar callbacks: {e}", "WARNING")
+
+            # 6. Limpa referências cíclicas
+            try:
+                self.orchestrator = None
+                self.logger = None
+                self.db = None
+            except Exception:
+                pass
+
+            # 7. Destrói a janela
+            try:
+                # Força GC antes de destruir
+                import gc
+                gc.collect()
+                self.quit()
                 self.destroy()
             except Exception as e:
-                self.logger.log(f"Falha ao destruir janela principal: {e}", "ERROR")
+                self.logger.log(f"Erro ao destruir janela: {e}", "ERROR")
+                # Força encerramento se destroy() falhar
+                import os, signal
+                os._exit(0)
+
         except Exception:
-            logging.exception("Erro inesperado no processo de fechamento.")
+            logging.exception("Erro fatal no processo de fechamento.")
+            # Força encerramento em último caso
+            import os, signal
+            os._exit(1)
 
     def _create_widgets(self):
         """Cria e organiza todos os widgets da interface principal."""
@@ -344,56 +393,89 @@ class App(ctk.CTk):
         threading.Thread(target=self._run_task_thread, args=(next_task,), daemon=True, name=f"TaskThread-{next_task['id'][:8]}").start()
 
     def _run_task_thread(self, task_config):
+        """
+        Executa uma tarefa em uma thread separada com melhor gerenciamento de estado e erro.
+        """
         mode = task_config.get('operation_mode', 'full_pipe')
         task_id = task_config['id']
         
+        def send_progress(percentage, stage):
+            """Helper para enviar atualizações de progresso."""
+            try:
+                self.progress_queue.put({
+                    'type': 'progress',
+                    'task_id': task_id,
+                    'percentage': percentage,
+                    'stage': stage
+                })
+            except Exception as e:
+                self.logger.log(f"Erro ao enviar progresso: {e}", "ERROR", task_id)
+        
         try:
             self.logger.log(f"Iniciando thread de tarefa no modo: {mode}", "DEBUG", task_id)
+            send_progress(0, 'Iniciando')
             
             if mode in ['sapiens_only', 'full_pipe']:
+                # Pipeline de transcrição e análise
+                self.logger.log("Iniciando pipeline Sapiens...", "INFO", task_id)
                 self.orchestrator.run_sapiens_task(self.progress_queue, task_config, self.stop_event)
                 
             elif mode == 'render_only':
+                # Pipeline de renderização
                 script_path = task_config.get('render_script_path')
                 if not script_path:
                     raise ValueError("Caminho do arquivo de roteiro não especificado")
                     
-                if not os.path.exists(script_path):
-                    raise ValueError(f"Arquivo de roteiro não encontrado: {script_path}")
+                self.logger.log("Validando arquivo de roteiro...", "INFO", task_id)
                 
-                # Validação do arquivo JSON para fornecer um erro mais claro.
+                # Usa o método de validação dedicado
                 try:
-                    with open(script_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Arquivo de roteiro possui formato JSON inválido: {e}")
-                except Exception as e:
-                    raise ValueError(f"Erro ao ler arquivo de roteiro: {e}")
-                
-                if not isinstance(data.get('segments'), list):
-                    raise ValueError("Formato de roteiro inválido: propriedade 'segments' ausente ou não é uma lista")
+                    script_data = self._validate_script_json(script_path, task_id)
+                except ValueError as e:
+                    raise ValueError(f"Validação do roteiro falhou: {e}")
                     
-                if not data['segments']:
-                    raise ValueError("Roteiro não contém nenhum segmento de vídeo")
-
+                # Atualiza configuração com metadados do script
+                try:
+                    with threading.Lock():
+                        self.db.update_task_config(task_id, {
+                            'render_metadata': {
+                                'total_segments': len(script_data['segments']),
+                                'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
+                                'validation_timestamp': str(datetime.datetime.now())
+                            }
+                        }, wait=True)
+                except Exception as e:
+                    self.logger.log(f"Aviso: Falha ao atualizar metadados: {e}", "WARNING", task_id)
+                
+                self.logger.log("Iniciando pipeline de renderização...", "INFO", task_id)
+                send_progress(0, 'Preparando Renderização')
+                
+                # Executa renderização
                 self.orchestrator.run_render_task(self.progress_queue, task_config, self.stop_event)
                 
             else:
                 raise ValueError(f"Modo de operação inválido: {mode}")
                 
         except Exception as e:
-            # Log detalhado do erro com stack trace completo
-            self.logger.log(f"Erro crítico na thread da tarefa: {e}", "CRITICAL", task_id, exc_info=True)
+            self.logger.log(f"Erro crítico na thread de tarefa: {e}", "ERROR", task_id, exc_info=True)
             self.logger.log("Stack trace completo:\n" + "".join(traceback.format_exc()), "DEBUG", task_id)
             
-            # Notifica a UI sobre o erro
-            self.progress_queue.put({
-                'type': 'error',
-                'message': str(e),
-                'task_id': task_id
-            })
+            try:
+                # Notifica a UI sobre o erro
+                self.progress_queue.put({
+                    'type': 'error',
+                    'task_id': task_id,
+                    'message': str(e),
+                    'details': {
+                        'mode': mode,
+                        'timestamp': str(datetime.datetime.now()),
+                        'traceback': traceback.format_exc()
+                    }
+                })
+            except Exception as notify_error:
+                self.logger.log(f"Erro ao notificar UI: {notify_error}", "ERROR", task_id)
+                
         finally:
-            # Garante que a thread será finalizada adequadamente
             self.logger.log("Thread de tarefa finalizada.", "DEBUG", task_id)
 
     def _queue_done(self):
@@ -437,16 +519,29 @@ class App(ctk.CTk):
                         continue
                         
                     if q_item['type'] == 'progress':
+                        percentage = q_item.get('percentage', 0)  # Valor default de 0%
+                        stage = q_item.get('stage', STATUS_PROCESSING)
+                        
                         def update_progress():
                             if not self.winfo_exists():
                                 return
-                            self._update_tree_item(
-                                task_id,
-                                {
-                                    'Progresso': self._text_progress_bar(q_item['percentage']),
-                                    'Status': f"⚙️ {q_item.get('stage', STATUS_PROCESSING)}"
-                                }
-                            )
+                            try:
+                                if isinstance(percentage, (int, float)):
+                                    progress_text = self._text_progress_bar(float(percentage))
+                                else:
+                                    progress_text = self._text_progress_bar(0)
+                                    self.logger.log(f"Aviso: percentage inválido ({percentage})", "WARNING")
+                                    
+                                self._update_tree_item(
+                                    task_id,
+                                    {
+                                        'Progresso': progress_text,
+                                        'Status': f"⚙️ {stage}"
+                                    }
+                                )
+                            except Exception as e:
+                                logging.error(f"Erro ao atualizar progresso: {e}", exc_info=True)
+                                
                         self.after(0, update_progress)
                         
                     elif q_item['type'] in ['error', 'interrupted', 'done']:
@@ -509,42 +604,159 @@ class App(ctk.CTk):
         except Exception as e:
             self.logger.log(f"Erro ao atualizar UI: {e}", "ERROR", task_id, exc_info=True)
 
+    def _validate_script_json(self, script_path, task_id):
+        """Valida o arquivo JSON do roteiro."""
+        try:
+            with open(script_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            # Validações básicas
+            if not isinstance(data, dict):
+                raise ValueError("JSON inválido: deve ser um objeto/dicionário")
+                
+            if 'segments' not in data:
+                raise ValueError("JSON inválido: propriedade 'segments' não encontrada")
+                
+            if not isinstance(data['segments'], list):
+                raise ValueError("JSON inválido: 'segments' deve ser uma lista")
+                
+            if not data['segments']:
+                raise ValueError("JSON inválido: lista de segmentos está vazia")
+                
+            # Valida cada segmento
+            for i, segment in enumerate(data['segments']):
+                if not isinstance(segment, dict):
+                    raise ValueError(f"Segmento {i} inválido: deve ser um objeto/dicionário")
+                    
+                required_fields = ['start', 'end', 'text']
+                for field in required_fields:
+                    if field not in segment:
+                        raise ValueError(f"Segmento {i} inválido: campo '{field}' não encontrado")
+                        
+                if not isinstance(segment['start'], (int, float)):
+                    raise ValueError(f"Segmento {i} inválido: 'start' deve ser numérico")
+                    
+                if not isinstance(segment['end'], (int, float)):
+                    raise ValueError(f"Segmento {i} inválido: 'end' deve ser numérico")
+                    
+                if segment['start'] >= segment['end']:
+                    raise ValueError(f"Segmento {i} inválido: 'start' deve ser menor que 'end'")
+                    
+            return data
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Erro ao decodificar JSON: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"Erro ao validar script: {str(e)}")
+
+    def _prepare_render_task(self, task_id, script_path):
+        """Prepara a tarefa para renderização."""
+        try:
+            # 1. Valida o script JSON
+            script_data = self._validate_script_json(script_path, task_id)
+            
+            # 2. Atualiza configuração de forma atômica
+            with threading.Lock():
+                self.db.update_task_config(task_id, {
+                    'render_script_path': script_path,
+                    'render_config': {
+                        'total_segments': len(script_data['segments']),
+                        'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
+                        'timestamp': str(datetime.datetime.now())
+                    }
+                }, wait=True)
+                self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
+                
+            return True
+            
+        except Exception as e:
+            self.logger.log(f"Erro ao preparar renderização: {e}", "ERROR", task_id, exc_info=True)
+            return False
+
     def _sapiens_done_handler(self, task_id, q_item):
         """Manipula a conclusão do pipeline Sapiens com transição segura para renderização."""
-        task_config = self.db.get_tasks_by_ids([task_id])[0]
-        
-        if task_config.get('operation_mode') == 'full_pipe':
-            self.logger.log(f"Pipeline 'Sapiens' concluído. Preparando para renderização...", "INFO", task_id)
+        try:
+            if not self.winfo_exists():
+                return
+                
+            tasks = self.db.get_tasks_by_ids([task_id])
+            if not tasks:
+                raise ValueError("Tarefa não encontrada no banco de dados")
+            task_config = tasks[0]
             
-            # 1. Atualiza configuração e status
-            self.db.update_task_config(task_id, {'render_script_path': q_item['script_path']}, wait=True)
-            self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
-            self._load_and_display_queue()
-            
-            # 2. Obtém configuração atualizada
-            updated_task = self.db.get_tasks_by_ids([task_id])[0]
-            
-            # 3. Função para iniciar renderização de forma segura
-            def start_render_safe():
-                try:
-                    self.logger.log("Iniciando thread de renderização...", "INFO", task_id)
-                    render_thread = threading.Thread(
-                        target=self.orchestrator.run_render_task,
-                        args=(self.progress_queue, updated_task, self.stop_event),
-                        daemon=True,
-                        name=f"RenderThread-{task_id[:8]}"
-                    )
-                    render_thread.start()
-                except Exception as e:
-                    self.logger.log(f"Erro ao iniciar renderização: {e}", "ERROR", task_id, exc_info=True)
-                    self._task_done_handler(task_id, {'type': 'error', 'task_id': task_id, 'message': str(e)})
-            
-            # 4. Agenda o início da renderização com atraso de 100ms
-            self.logger.log("Agendando início da renderização com atraso de segurança...", "DEBUG", task_id)
-            self.after(100, start_render_safe)
-            
-        else:
-            self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
+            if task_config.get('operation_mode') == 'full_pipe':
+                # 1. Validações iniciais
+                if 'script_path' not in q_item:
+                    raise ValueError("Caminho do script não fornecido")
+                    
+                script_path = q_item['script_path']
+                if not os.path.exists(script_path):
+                    raise ValueError(f"Arquivo de script não encontrado: {script_path}")
+                    
+                self.logger.log(f"Pipeline 'Sapiens' concluído. Preparando renderização...", "INFO", task_id)
+                
+                # 2. Prepara a tarefa para renderização
+                if not self._prepare_render_task(task_id, script_path):
+                    raise ValueError("Falha ao preparar tarefa para renderização")
+                
+                # 3. Atualiza UI
+                def update_ui():
+                    if not self.winfo_exists():
+                        return
+                    self._load_and_display_queue()
+                self.after(0, update_ui)
+                
+                # 4. Inicia renderização com delay de segurança
+                def start_render_safe():
+                    if not self.winfo_exists():
+                        return
+                        
+                    try:
+                        # Obtém configuração atualizada
+                        updated_tasks = self.db.get_tasks_by_ids([task_id])
+                        if not updated_tasks:
+                            raise ValueError("Tarefa não encontrada após atualização")
+                        updated_task = updated_tasks[0]
+                        
+                        self.logger.log("Iniciando thread de renderização...", "INFO", task_id)
+                        
+                        # Sinal inicial de progresso
+                        self.progress_queue.put({
+                            'type': 'progress',
+                            'task_id': task_id,
+                            'percentage': 0,
+                            'stage': 'Iniciando Renderização'
+                        })
+                        
+                        # Inicia thread de renderização
+                        render_thread = threading.Thread(
+                            target=self.orchestrator.run_render_task,
+                            args=(self.progress_queue, updated_task, self.stop_event),
+                            daemon=True,
+                            name=f"RenderThread-{task_id[:8]}"
+                        )
+                        render_thread.start()
+                        
+                    except Exception as e:
+                        self.logger.log(f"Erro ao iniciar renderização: {e}", "ERROR", task_id, exc_info=True)
+                        self._task_done_handler(task_id, {
+                            'type': 'error',
+                            'task_id': task_id,
+                            'message': f"Erro ao iniciar renderização: {e}"
+                        })
+                
+                self.after(100, start_render_safe)
+                
+            else:
+                self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
+                
+        except Exception as e:
+            self.logger.log(f"Erro crítico em _sapiens_done_handler: {e}", "ERROR", task_id, exc_info=True)
+            self._task_done_handler(task_id, {
+                'type': 'error',
+                'task_id': task_id,
+                'message': f"Erro crítico no handler: {e}"
+            })
 
     def _load_and_display_queue(self):
         selection = self.tree.selection(); valid_selection = [s for s in selection if self.tree.exists(s)]
