@@ -158,7 +158,7 @@ class AudioTranscriber:
         all_words = []
         for s in segments_gen:
             if stop_event.is_set(): self.logger.log("Transcrição interrompida.", "WARNING", task_id); return []
-            pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': 11 + (s.end / info.duration) * 39, 'task_id': task_id})
+            pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': 11 + (s.end / info.duration) * 39 if info.duration > 0 else 50, 'task_id': task_id})
             if s.words: all_words.extend([Word(start=w.start, end=w.end, word=w.word) for w in s.words])
         self.logger.log(f"Transcrição finalizada com {len(all_words)} palavras.", "SUCCESS", task_id)
         return all_words
@@ -204,7 +204,6 @@ class ContentAnalyzer:
         padding_start = self.config.get("segment_padding_start_s", 0.1)
         padding_end = self.config.get("segment_padding_end_s", 0.1)
         
-        # O início do primeiro segmento, tanto exato quanto com padding
         exact_start_time = words[0].start
         padded_start_time = max(0, exact_start_time - padding_start)
         
@@ -227,10 +226,7 @@ class ContentAnalyzer:
                 cut_reason = f"palavra de preenchimento ('{cur.word.strip()}')"
 
             if cut_reason:
-                # --- PONTO DE CORTE ENCONTRADO ---
                 exact_end_time = cur.end
-                
-                # Lógica de padding com prevenção de sobreposição
                 padded_end_time = cur.end + padding_end
                 next_padded_start_time = nxt.start - padding_start
                 
@@ -239,15 +235,12 @@ class ContentAnalyzer:
                     padded_end_time = midpoint
                     next_padded_start_time = midpoint
 
-                # Adiciona os segmentos às suas respectivas listas
                 self._add_seg(padded_segs, padded_start_time, padded_end_time)
                 self._add_seg(exact_segs, exact_start_time, exact_end_time)
                 
-                # Define o início do próximo segmento
                 padded_start_time = next_padded_start_time
                 exact_start_time = nxt.start
         
-        # Adiciona o último segmento para ambas as listas
         self._add_seg(padded_segs, padded_start_time, words[-1].end + padding_end)
         self._add_seg(exact_segs, exact_start_time, words[-1].end)
         
@@ -272,36 +265,70 @@ class ScriptComposer:
         except IOError as e: self.logger.log(f"ERRO ao salvar roteiro JSON: {e}", "ERROR", task_id); return None
 
 class SubtitleGenerator:
-    """Gera um arquivo de legenda .srt sincronizado usando os tempos exatos."""
-    def __init__(self, logger: Logger): self.logger = logger; self.Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
+    """Gera um arquivo de legenda .srt sincronizado, respeitando os cortes."""
+    def __init__(self, logger: Logger):
+        self.logger = logger
+        # Armazena o tempo original para detectar os cortes.
+        self.Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word', 'original_start'])
+
     def _seconds_to_srt_time(self, seconds: float) -> str:
-        millis = int((seconds - int(seconds)) * 1000); td = timedelta(seconds=int(seconds)); return f"{td},{millis:03d}"
+        """Converte segundos para o formato de tempo SRT (HH:MM:SS,ms)."""
+        if seconds < 0: seconds = 0
+        millis = int((seconds - int(seconds)) * 1000)
+        td = timedelta(seconds=int(seconds))
+        return f"{td},{millis:03d}"
+
     def _remap_words_to_new_timeline(self, words: List[Any], exact_segments: List[Dict[str, float]]) -> List[Any]:
-        remapped_words = []; time_removed = 0.0; last_seg_end = 0.0
+        """Mapeia os tempos das palavras para a nova linha do tempo, guardando o tempo original."""
+        remapped_words = []
+        time_removed = 0.0
+        last_seg_end = 0.0
         for segment in exact_segments:
             time_removed += (segment['start'] - last_seg_end)
             for word in words:
-                # Verifica se a palavra pertence estritamente a este segmento exato
                 if segment['start'] <= word.start < segment['end']:
-                    remapped_words.append(self.Word(start=word.start - time_removed, end=word.end - time_removed, word=word.word))
+                    remapped_words.append(self.Word(
+                        start=word.start - time_removed, 
+                        end=word.end - time_removed, 
+                        word=word.word,
+                        original_start=word.start # Guarda o tempo original
+                    ))
             last_seg_end = segment['end']
         return remapped_words
+
     def generate_srt(self, words: List[Any], exact_segments: List[Dict[str, float]], output_path: str, task_id: str):
         self.logger.log("Gerando legenda .srt sincronizada...", "INFO", task_id)
         if not words or not exact_segments: self.logger.log("Dados insuficientes para gerar legenda.", "WARNING", task_id); return
+        
         remapped_words = self._remap_words_to_new_timeline(words, exact_segments)
         if not remapped_words: self.logger.log("Nenhuma palavra nos segmentos mantidos.", "WARNING", task_id); return
+
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
                 subtitle_index, current_line, line_start_time = 1, "", remapped_words[0].start
+                
                 for i, word in enumerate(remapped_words):
-                    next_word_start = remapped_words[i+1].start if i + 1 < len(remapped_words) else word.end + 5
+                    is_cut = False
+                    # --- O DETECTOR DE CORTES ---
+                    if i + 1 < len(remapped_words):
+                        next_word = remapped_words[i+1]
+                        # Se a distância entre as palavras no tempo ORIGINAL for grande, é um corte.
+                        if (next_word.original_start - word.end) > 2.0: # Limite de 2 segundos
+                            is_cut = True
+
                     current_line += word.word + " "
-                    if len(current_line) > 42 or (next_word_start - word.end > 1.0) or (word.end - line_start_time > 5.0):
+                    
+                    # Força uma nova legenda se a linha for muito longa, a pausa for grande, ou um corte foi detectado.
+                    if is_cut or len(current_line) > 42 or (word.end - line_start_time > 5.0):
                         f.write(f"{subtitle_index}\n{self._seconds_to_srt_time(line_start_time)} --> {self._seconds_to_srt_time(word.end)}\n{current_line.strip()}\n\n")
                         subtitle_index += 1; current_line = ""
-                        if i + 1 < len(remapped_words): line_start_time = remapped_words[i+1].start
+                        if i + 1 < len(remapped_words):
+                            line_start_time = remapped_words[i+1].start
+                
+                # Garante que a última linha seja escrita
                 if current_line.strip():
                     f.write(f"{subtitle_index}\n{self._seconds_to_srt_time(line_start_time)} --> {self._seconds_to_srt_time(remapped_words[-1].end)}\n{current_line.strip()}\n\n")
+
             self.logger.log(f"Legenda .srt salva com sucesso.", "SUCCESS", task_id)
-        except Exception as e: self.logger.log(f"Erro ao gerar legenda .srt: {e}", "CRITICAL", task_id, exc_info=True)
+        except Exception as e:
+            self.logger.log(f"Erro ao gerar legenda .srt: {e}", "CRITICAL", task_id, exc_info=True)
