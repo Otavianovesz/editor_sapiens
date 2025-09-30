@@ -15,7 +15,7 @@ class AdvancedSettings(ctk.CTkToplevel):
         self.title("Configurações Avançadas")
         self.config = config_manager
         self.logger = logger
-        self.geometry("800x700")
+        self.geometry("800x750") # Aumentei um pouco a altura para acomodar os novos sliders
         self.transient(master)
         self.grab_set()
         
@@ -48,6 +48,10 @@ class AdvancedSettings(ctk.CTkToplevel):
         self._create_slider_with_label(analysis_frame, 'cut_threshold', "Limite de Corte:", -20.0, 0.0, "{:.1f}", "Nota de corte. Pausas com nota <= a este valor serão cortadas.")
         self._create_slider_with_label(analysis_frame, 'min_segment_duration_s', "Duração Mínima de Segmento (s):", 0.1, 1.0, "{:.2f}s", "Evita 'flashes' de vídeo muito curtos.")
         self._create_slider_with_label(analysis_frame, 'filler_word_context_pause', "Pausa de Contexto (Filler Word):", 0.0, 1.0, "{:.2f}s", "Aumenta a chance de cortar pausas próximas a palavras de preenchimento.")
+        
+        # --- NOVOS SLIDERS PARA MARGEM DE SEGURANÇA ---
+        self._create_slider_with_label(analysis_frame, 'segment_padding_start_s', "Margem Início do Segmento (s):", 0.0, 0.5, "{:.2f}s", "Tempo de segurança adicionado antes do início de um segmento para evitar cortes secos.")
+        self._create_slider_with_label(analysis_frame, 'segment_padding_end_s', "Margem Fim do Segmento (s):", 0.0, 0.5, "{:.2f}s", "Tempo de segurança adicionado ao final de um segmento para dar 'respiro' à fala.")
 
         # --- Seção de Palavras de Preenchimento ---
         filler_frame = ctk.CTkFrame(analysis_frame, fg_color="transparent"); filler_frame.pack(fill="both", padx=10, pady=8, expand=True)
