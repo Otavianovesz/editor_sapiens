@@ -5,51 +5,10 @@ import sys
 import uuid
 import queue
 import threading
-import datetime
-from typing import Dict, Any, Optional, List, Union
-from datetime import datetime, timedelta
 import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk, Menu
-import traceback
-import logging
-from threading import Lock
-
-def _time_to_seconds(time_val: Union[int, float, str]) -> float:
-    """
-    Converte diferentes formatos de tempo para segundos (float).
-    Suporta múltiplos formatos:
-    - Inteiros/floats (convertidos diretamente)
-    - Strings em formato 'SS.fff' (segundos com milissegundos)
-    - Strings em formato 'HH:MM:SS[.f]' (formato completo de tempo)
-    """
-    if isinstance(time_val, (int, float)):
-        return float(time_val)
-    
-    if isinstance(time_val, str):
-        try:
-            # 1. Tenta converter diretamente para float (formato do roteiro gerado)
-            return float(time_val)
-        except ValueError:
-            try:
-                # 2. Tenta formato HH:MM:SS.fff
-                dt = datetime.strptime(time_val, '%H:%M:%S.%f')
-            except ValueError:
-                # 3. Tenta formato HH:MM:SS
-                dt = datetime.strptime(time_val, '%H:%M:%S')
-            
-            # Converte objeto datetime para segundos
-            return timedelta(
-                hours=dt.hour,
-                minutes=dt.minute,
-                seconds=dt.second,
-                microseconds=getattr(dt, 'microsecond', 0)
-            ).total_seconds()
-    
-    raise TypeError(f"Formato de tempo não suportado: {time_val} ({type(time_val).__name__})")
-
-# Importa constantes globais
-from utils.constants import *
+from typing import Dict, Any, List, Optional
 
 # Importa módulos do projeto
 from core.database import DatabaseManager
@@ -83,74 +42,27 @@ if not hasattr(ctk, "CTkToolTip"):
     ctk.CTkToolTip = _DummyToolTip
 
 class App(ctk.CTk):
-    """Classe principal da aplicação, responsável por toda a interface gráfica."""
-    def __init__(self, app_context=None):
+    """
+    Classe principal da aplicação, responsável por toda a interface gráfica (GUI),
+    gerenciamento de estado e coordenação das ações do usuário com o backend.
+    """
+    def __init__(self):
         super().__init__()
-        self.app_context = app_context
         self.title("Editor Sapiens (Arconte)")
         self.geometry("1600x900")
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        self.log_queue, self.progress_queue = queue.Queue(), queue.Queue()
+        self.log_queue = queue.Queue()
+        self.progress_queue = queue.Queue()
         self.db = DatabaseManager()
         self.logger = Logger(self.log_queue, self.db)
         self.config = Config()
         self.orchestrator = Orchestrator(self.logger, self.config)
-        
-        # Registrar recursos no app_context se disponível
-        if self.app_context:
-            self.app_context.register_processor(self.orchestrator)
-            self.app_context.register_processor(self.db)
-        def _thread_excepthook(args):
-            # args é threading.ExceptHookArgs: (exc_type, exc_value, exc_traceback, thread)
-            try:
-                # Log primário no arquivo de log
-                logging.critical(f"Unhandled exception in thread {args.thread.name}: {args.exc_value}", 
-                               exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-                
-                # Extrai o traceback completo
-                tb = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
-                
-                # Tenta enviar para o logger de UI e progress_queue
-                if hasattr(self, "logger"):
-                    self.logger.log(f"Erro crítico em thread {args.thread.name}: {args.exc_value}", "CRITICAL")
-                    self.logger.log(f"Traceback completo:\n{tb}", "DEBUG")
-                    
-                    # Notifica a UI sobre o erro através da progress_queue
-                    try:
-                        if hasattr(self, "progress_queue"):
-                            self.progress_queue.put({
-                                'type': 'error',
-                                'message': f"Erro crítico em thread: {args.exc_value}",
-                                'task_id': getattr(args.thread, 'task_id', 'unknown')
-                            })
-                    except Exception:
-                        pass
-                
-                # Força uma atualização da UI para mostrar o erro
-                if hasattr(self, "after"):
-                    self.after(100, lambda: messagebox.showerror("Erro Crítico", 
-                             f"Ocorreu um erro crítico em uma thread:\n\n{args.exc_value}"))
-                
-            except Exception as e:
-                logging.exception("Falha ao processar exceção de thread")
-        threading.excepthook = _thread_excepthook
 
-        # Também reforçamos o excepthook global (main thread)
-        def _main_excepthook(exc_type, exc_value, exc_traceback):
-            logging.critical(f"Unhandled exception (main thread): {exc_value}", exc_info=(exc_type, exc_value, exc_traceback))
-            try:
-                tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-                if hasattr(self, "logger"):
-                    self.logger.log(f"Unhandled exception (main thread): {exc_value}", "CRITICAL")
-                    self.logger.log(tb, "DEBUG")
-            except Exception:
-                logging.exception("Falha ao enviar exceção principal para self.logger.")
-        sys.excepthook = _main_excepthook
         self.is_running_task = False
         self.stop_event = threading.Event()
-        self.current_task_id = None
+        self.current_task_id: Optional[str] = None
 
         self._create_widgets()
         self.after(100, self._post_init_startup)
@@ -158,125 +70,29 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def set_status_text(self, text: str):
+        """Define o texto na barra de status inferior."""
         self.status_var.set(text)
 
     def _post_init_startup(self):
-        """Tarefas a serem executadas após a inicialização da UI."""
+        """Tarefas a serem executadas após a inicialização completa da UI."""
         if not self.db.is_writer_healthy:
-            self.logger.log("Writer DB não respondeu. Operando em modo limitado.", "ERROR")
+            self.logger.log("Writer DB não respondeu. Operando em modo de leitura apenas.", "ERROR")
         else:
-            self.logger.log("Writer DB pronto.", "INFO")
+            self.logger.log("Writer DB pronto e esquema do banco de dados validado.", "INFO")
         self.db.recover_interrupted_tasks(wait=True)
         self._load_and_display_queue()
 
-    def _on_closing(self, force: bool = False):
-        """Lida com o fechamento da janela principal e a limpeza de recursos."""
-        self.logger.log("Iniciando processo de encerramento da aplicação.", "INFO")
-        
-        # 1. Verificação de tarefas e confirmação do usuário
-        if self.is_running_task and not force:
-            try:
-                answer = messagebox.askyesno(
-                    "Sair", 
-                    "Tarefa em andamento. Deseja realmente sair e interrompê-la?"
-                )
-                if not answer:
-                    self.logger.log("Fechamento cancelado pelo usuário.", "INFO")
-                    return
-            except Exception as e:
-                self.logger.log(f"Erro ao mostrar diálogo de confirmação: {e}", "WARNING")
-                return
-
-        # 2. Interrompe tarefas em execução
-        try:
-            if self.is_running_task:
+    def _on_closing(self):
+        """Lida com o fechamento da janela principal de forma segura."""
+        self.logger.log("Fechando a aplicação...", "INFO")
+        if self.is_running_task:
+            if messagebox.askyesno("Sair", "Uma tarefa está em andamento. Deseja realmente interrompê-la e sair?"):
                 self.stop_event.set()
                 self.orchestrator.interrupt_current_task()
-                self.logger.log("Tarefa em execução interrompida.", "INFO")
-                # Pequena espera para a tarefa terminar
-                import time
-                time.sleep(0.5)
-        except Exception as e:
-            self.logger.log(f"Aviso ao interromper tarefa: {e}", "WARNING")
-
-        # 3. Limpa filas de progresso e log
-        try:
-            def clear_queue(q):
-                while True:
-                    try:
-                        q.get_nowait()
-                    except queue.Empty:
-                        break
-            
-            clear_queue(self.progress_queue)
-            clear_queue(self.log_queue)
-            self.logger.log("Filas de progresso e log limpas.", "DEBUG")
-        except Exception as e:
-            self.logger.log(f"Aviso ao limpar filas: {e}", "WARNING")
-
-        # 4. Cancela callbacks pendentes
-        try:
-            pending = self.tk.call('after', 'info')
-            for event_id in pending:
-                try:
-                    self.after_cancel(event_id)
-                except Exception:
-                    pass
-            self.logger.log("Callbacks pendentes cancelados.", "DEBUG")
-        except Exception as e:
-            self.logger.log(f"Aviso ao cancelar callbacks: {e}", "WARNING")
-
-        # 5. Limpeza de recursos críticos (ANTES de destruir a UI)
-        try:
-            # 5.1 Limpeza do banco de dados
-            if hasattr(self, 'db') and self.db:
-                try:
-                    self.db.close()
-                    self.logger.log("Banco de dados fechado com sucesso.", "INFO")
-                except Exception as e:
-                    self.logger.log(f"Erro ao fechar banco de dados: {e}", "ERROR")
-            
-            # 5.2 Limpeza do app_context
-            if hasattr(self, 'app_context') and self.app_context:
-                try:
-                    self.app_context.cleanup()
-                    self.logger.log("App context limpo.", "DEBUG")
-                except Exception as e:
-                    self.logger.log(f"Erro ao limpar app context: {e}", "WARNING")
-                    
-            # 5.3 Força garbage collection
-            try:
-                import gc
-                gc.collect()
-                self.logger.log("Garbage collection executado.", "DEBUG")
-            except Exception:
-                pass
-                
-        except Exception as e:
-            self.logger.log(f"Erro durante limpeza de recursos: {e}", "ERROR")
-
-        # 6. Destruição da interface (APÓS limpeza de recursos)
-        try:
-            self.logger.log("Destruindo interface gráfica...", "INFO")
-            # Primeiro tenta quit() para fechar corretamente
-            try:
-                self.quit()
-            except Exception:
-                pass
-            # Depois força destroy()
-            self.destroy()
-        except Exception as e:
-            self.logger.log(f"Erro ao destruir janela: {e}", "ERROR")
-            # Em caso de falha, força o encerramento
-            import os
-            os._exit(0)
-            
-        # 7. Último recurso: força encerramento
-        try:
-            import os
-            os._exit(0)
-        except Exception:
-            pass
+            else:
+                return # Cancela o fechamento
+        self.db.close()
+        self.destroy()
 
     def _create_widgets(self):
         """Cria e organiza todos os widgets da interface principal."""
@@ -292,7 +108,7 @@ class App(ctk.CTk):
         edit_menu = Menu(self.menubar, tearoff=0); edit_menu.add_command(label="Remover Selecionados", command=self._remove_tasks); edit_menu.add_command(label="Limpar Concluídas/Erradas", command=self._clear_tasks); self.menubar.add_cascade(label="Editar", menu=edit_menu)
         process_menu = Menu(self.menubar, tearoff=0); process_menu.add_command(label="Iniciar Fila", command=self._start_queue); process_menu.add_command(label="Parar Fila", command=self._stop_queue); self.menubar.add_cascade(label="Processamento", menu=process_menu)
         tools_menu = Menu(self.menubar, tearoff=0); tools_menu.add_command(label="Gerenciador de Presets...", command=self._open_presets_manager); tools_menu.add_command(label="Configurações Avançadas...", command=self._open_advanced_settings); self.menubar.add_cascade(label="Ferramentas", menu=tools_menu)
-    
+
     def _create_center_panel(self):
         center_panel = ctk.CTkFrame(self); center_panel.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
         center_panel.grid_rowconfigure(1, weight=1); center_panel.grid_columnconfigure(0, weight=1)
@@ -330,31 +146,88 @@ class App(ctk.CTk):
         return "break"
 
     def _on_task_selection_change(self, event=None):
+        """Atualiza o painel do inspetor com base nas tarefas selecionadas."""
         for widget in self.inspector_content_frame.winfo_children(): widget.destroy()
-        selected_ids = self.tree.selection(); tasks = self.db.get_tasks_by_ids(list(selected_ids))
-        if not tasks: self.inspector_label.configure(text="Inspetor (Nenhuma Tarefa Selecionada)"); return
-        self.inspector_label.configure(text=f"Inspetor ({len(tasks)} Tarefa(s) Selecionada(s))")
-        def get_common(key): vals={t.get(key) for t in tasks}; return vals.pop() if len(vals)==1 else None
-        op_mode=get_common('operation_mode')
-        self._create_widget_group("Modo de Operação", [('radio','operation_mode','Pipeline Completo','full_pipe'), ('radio','operation_mode','Apenas Roteirizar','sapiens_only'), ('radio','operation_mode','Apenas Renderizar','render_only')], get_common)
-        if op_mode in ['full_pipe', 'sapiens_only']: self._create_widget_group("Config. de Roteiro", [('check','use_visual_analysis','Usar Análise Visual 👁️'), ('radio','transcription_mode','Gerar com Whisper','whisper'), ('radio','transcription_mode','Usar Arquivo Externo','file'), ('file','transcription_path',"Arquivo de Transcrição:",(("JSON","*.json"),),'transcription_mode','file')], get_common)
-        if op_mode in ['full_pipe', 'render_only']: self._create_widget_group("Config. de Renderização", [('file','render_script_path',"Arquivo de Roteiro:",(("JSON","*.json"),))], get_common)
 
-    def _create_widget_group(self, title, widgets_conf, get_common_func):
+        selected_ids = self.tree.selection()
+        if not selected_ids:
+            self.inspector_label.configure(text="Inspetor (Nenhuma Tarefa Selecionada)")
+            return
+
+        tasks = self.db.get_tasks_by_ids(list(selected_ids))
+        if not tasks: return
+
+        self.inspector_label.configure(text=f"Inspetor ({len(tasks)} Tarefa(s) Selecionada(s))")
+
+        def get_common_value(key: str) -> Any:
+            values = {t.get(key) for t in tasks}
+            return values.pop() if len(values) == 1 else None
+
+        op_mode = get_common_value('operation_mode')
+
+        self._create_widget_group("Modo de Operação", [
+            ('radio', 'operation_mode', 'Pipeline Completo', 'full_pipe'),
+            ('radio', 'operation_mode', 'Apenas Roteirizar', 'sapiens_only'),
+            ('radio', 'operation_mode', 'Apenas Renderizar', 'render_only')
+        ], get_common_value)
+
+        if op_mode in ['full_pipe', 'sapiens_only']:
+            transcription_file_types = (
+                ("Arquivos de Transcrição", "*.json *.srt *.vtt"),
+                ("JSON", "*.json"), ("SRT", "*.srt"), ("VTT", "*.vtt")
+            )
+            self._create_widget_group("Config. de Roteiro", [
+                # CORREÇÃO: Checkbox agora é funcional e não mais 'disabled'.
+                ('check', 'use_visual_analysis', 'Usar Análise Visual 👁️', {'tooltip': 'Funcionalidade em desenvolvimento.'}),
+                ('radio', 'transcription_mode', 'Gerar com Whisper', 'whisper'),
+                ('radio', 'transcription_mode', 'Usar Arquivo Externo', 'file'),
+                ('file', 'transcription_path', "Arquivo de Transcrição:", transcription_file_types, 'transcription_mode', 'file')
+            ], get_common_value)
+
+        if op_mode in ['full_pipe', 'render_only']:
+            self._create_widget_group("Config. de Renderização", [
+                ('file', 'render_script_path', "Arquivo de Roteiro:", (("JSON", "*.json"),))
+            ], get_common_value)
+
+    def _create_widget_group(self, title: str, widgets_conf: list, get_common_func: callable):
+        """Cria um grupo de widgets no inspetor de forma dinâmica."""
         frame = ctk.CTkFrame(self.inspector_content_frame); frame.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
+
         for conf in widgets_conf:
-            k, text, v_type = conf[1], conf[2], conf[0]
-            if len(conf) > 4 and get_common_func(conf[4]) != conf[5]: continue
-            common_val = get_common_func(k)
-            if v_type == 'check': var = ctk.BooleanVar(value=bool(common_val if common_val is not None else 1))
-            else: var = ctk.StringVar(value=str(common_val if common_val is not None else ''))
-            if v_type == 'radio': ctk.CTkRadioButton(frame, text=text, variable=var, value=conf[3], command=lambda k=k, v=conf[3]: self._update_selected_tasks({k:v})).pack(anchor="w", padx=20, pady=2)
-            elif v_type == 'check': ctk.CTkCheckBox(frame, text=text, variable=var, command=lambda k=k, v=var: self._update_selected_tasks({k: int(v.get())})).pack(anchor="w", padx=10, pady=5)
-            elif v_type == 'file':
-                sub_frame=ctk.CTkFrame(frame,fg_color="transparent"); sub_frame.pack(fill='x',padx=10,pady=2); ctk.CTkLabel(sub_frame,text=text).pack(side='left')
+            widget_type, key, text = conf[0], conf[1], conf[2]
+
+            if len(conf) > 4 and get_common_func(conf[4]) != conf[5]:
+                continue
+
+            common_val = get_common_func(key)
+            var = ctk.BooleanVar() if widget_type == 'check' else ctk.StringVar()
+            if common_val is not None:
+                var.set(common_val)
+
+            if widget_type == 'radio':
+                ctk.CTkRadioButton(frame, text=text, variable=var, value=conf[3],
+                                 command=lambda k=key, v=conf[3]: self._update_selected_tasks({k: v})
+                                 ).pack(anchor="w", padx=20, pady=2)
+            elif widget_type == 'check':
+                extra_options = conf[3] if len(conf) > 3 else {}
+                tooltip_text = extra_options.pop('tooltip', None)
+                # CORREÇÃO: O comando é sempre atribuído, pois o widget agora é interativo.
+                command = lambda k=key, v=var: self._update_selected_tasks({k: int(v.get())})
+                
+                cb = ctk.CTkCheckBox(frame, text=text, variable=var, command=command, **extra_options)
+                if tooltip_text:
+                    ctk.CTkToolTip(cb, message=tooltip_text)
+                cb.pack(anchor="w", padx=10, pady=5)
+
+            elif widget_type == 'file':
+                file_types = conf[3]
+                sub_frame=ctk.CTkFrame(frame,fg_color="transparent"); sub_frame.pack(fill='x',padx=10,pady=2)
+                ctk.CTkLabel(sub_frame,text=text).pack(side='left')
                 entry=ctk.CTkEntry(sub_frame,textvariable=var); entry.pack(side='left',fill='x',expand=True,padx=5)
-                def browse(k=k,v=var,ft=conf[3]): p=filedialog.askopenfilename(filetypes=ft); (v.set(p), self._update_selected_tasks({k: p})) if p else None
+                def browse(k=key, v=var, ft=file_types):
+                    p = filedialog.askopenfilename(filetypes=ft)
+                    if p: v.set(p); self._update_selected_tasks({k: p})
                 ctk.CTkButton(sub_frame,text="Procurar...",width=80,command=browse).pack(side='left')
 
     def _show_context_menu(self, event):
@@ -370,7 +243,8 @@ class App(ctk.CTk):
         finally: menu.grab_release()
 
     def _prioritize_tasks(self):
-        selected_ids = self.tree.selection(); tasks = self.db.get_all_tasks()
+        selected_ids = self.tree.selection()
+        tasks = self.db.get_all_tasks()
         if not selected_ids or not tasks: return
         min_order = tasks[0].get('display_order', 0.0)
         self.logger.log(f"Priorizando {len(selected_ids)} tarefa(s).", "INFO")
@@ -379,10 +253,11 @@ class App(ctk.CTk):
         self._load_and_display_queue()
 
     def _clone_tasks(self):
-        selected_ids = self.tree.selection(); tasks_to_clone = self.db.get_tasks_by_ids(list(selected_ids))
+        selected_ids = self.tree.selection()
+        tasks_to_clone = self.db.get_tasks_by_ids(list(selected_ids))
         if not tasks_to_clone: return
         self.logger.log(f"Clonando {len(tasks_to_clone)} tarefa(s).", "INFO")
-        max_order = max([t.get('display_order') or 0 for t in self.db.get_all_tasks()], default=0)
+        max_order = max([t.get('display_order', 0.0) for t in self.db.get_all_tasks()], default=0.0)
         for i, task in enumerate(tasks_to_clone):
             new_id = str(uuid.uuid4())
             config_to_clone = {k: v for k, v in task.items() if k not in ['id', 'video_path', 'display_order', 'added_timestamp', 'status']}
@@ -390,590 +265,192 @@ class App(ctk.CTk):
             if config_to_clone: self.db.update_task_config(new_id, config_to_clone, wait=(i == len(tasks_to_clone) - 1))
         self._load_and_display_queue()
 
-    def _update_selected_tasks(self, update_dict):
+    def _update_selected_tasks(self, update_dict: Dict[str, Any]):
         selected_ids = self.tree.selection()
         if not selected_ids: return
         self.logger.log(f"Atualizando {len(selected_ids)} tarefas com {update_dict}", "DEBUG")
         for i, task_id in enumerate(selected_ids):
             self.db.update_task_config(task_id, update_dict, wait=(i == len(selected_ids) - 1))
-        self.after(50, self._load_and_display_queue); self.after(100, self._on_task_selection_change)
+        self.after(50, self._load_and_display_queue)
+        self.after(100, self._on_task_selection_change)
 
     def _add_tasks(self):
-        files = filedialog.askopenfilenames(title="Selecione vídeos", filetypes=(("Vídeos","*.mp4 *.mov *.avi *.mkv"),))
+        files = filedialog.askopenfilenames(title="Selecione vídeos", filetypes=(("Vídeos","*.mp4 *.mov *.avi *.mkv"), ("Todos os Arquivos", "*.*")))
         if not files: return
         self.logger.log(f"Adicionando {len(files)} nova(s) tarefa(s) à fila.", "INFO")
-        max_order = max([t.get('display_order') or 0 for t in self.db.get_all_tasks()], default=0)
+        max_order = max([t.get('display_order', 0.0) for t in self.db.get_all_tasks()], default=0.0)
         for i, f in enumerate(files):
             self.db.add_task(str(uuid.uuid4()), f, max_order + 1 + i, wait=(i == len(files) - 1))
         self._load_and_display_queue()
 
     def _remove_tasks(self):
         ids = self.tree.selection()
-        if ids and messagebox.askyesno("Remover", f"Remover {len(ids)} tarefa(s)?"):
-            self.logger.log(f"Removendo {len(ids)} tarefa(s): {ids}", "INFO")
+        if ids and messagebox.askyesno("Remover", f"Tem certeza que deseja remover {len(ids)} tarefa(s)?"):
+            self.logger.log(f"Removendo {len(ids)} tarefa(s).", "INFO")
             self.db.delete_tasks(list(ids), wait=True); self._load_and_display_queue()
 
     def _clear_tasks(self):
         if messagebox.askyesno("Limpar Tarefas", "Deseja remover todas as tarefas concluídas, com erro ou interrompidas?"):
-            self.logger.log("Limpando tarefas concluídas e com erro.", "INFO")
+            self.logger.log("Limpando tarefas finalizadas.", "INFO")
             self.db.clear_finished_tasks(wait=True); self._load_and_display_queue()
 
     def _start_queue(self):
         if self.is_running_task: return
         self.logger.log("Iniciando processamento da fila.", "INFO")
         self.start_button.configure(state="disabled"); self.stop_button.configure(state="normal")
-        self.stop_event.clear(); self._start_next_task()
+        self.stop_event.clear()
+        self._start_next_task()
 
     def _stop_queue(self):
         if not self.is_running_task: return
         self.logger.log("Parada da fila solicitada pelo usuário.", "WARNING")
-        self.stop_event.set(); self.orchestrator.interrupt_current_task()
-        self.stop_button.configure(state="disabled")
+        self.stop_event.set()
+        self.orchestrator.interrupt_current_task()
+        self.stop_button.configure(text="Parando...", state="disabled")
 
     def _start_next_task(self):
-        if self.stop_event.is_set(): self._queue_done(); return
-        next_task = next((t for t in self.db.get_all_tasks() if t['status'] in [STATUS_QUEUED, STATUS_INTERRUPTED, STATUS_AWAIT_RENDER]), None)
-        if not next_task: self.logger.log("Fila concluída. Nenhuma tarefa pendente.", "SUCCESS"); self._queue_done(); return
+        """Inicia a próxima tarefa pendente na fila."""
+        if self.stop_event.is_set():
+            self._queue_done("Fila parada pelo usuário.")
+            return
+
+        all_tasks = self.db.get_all_tasks()
+        next_task = next((t for t in all_tasks if t['status'] in [STATUS_QUEUED, STATUS_INTERRUPTED, STATUS_AWAIT_RENDER]), None)
+
+        if not next_task:
+            self._queue_done("Fila concluída. Nenhuma tarefa pendente.")
+            return
+
         self.is_running_task, self.current_task_id = True, next_task['id']
         self.logger.log(f"Iniciando próxima tarefa: {os.path.basename(next_task['video_path'])} (ID: {self.current_task_id[:8]})", "INFO")
-        self.db.update_task_status(self.current_task_id, STATUS_PROCESSING, wait=True); self._load_and_display_queue()
+        self.db.update_task_status(self.current_task_id, STATUS_PROCESSING, wait=True)
+        self._load_and_display_queue()
+
         threading.Thread(target=self._run_task_thread, args=(next_task,), daemon=True, name=f"TaskThread-{next_task['id'][:8]}").start()
 
-    def _run_task_thread(self, task_config):
-        """
-        Executa uma tarefa em uma thread separada com melhor gerenciamento de estado e erro.
-        """
+    def _run_task_thread(self, task_config: Dict[str, Any]):
+        """Função alvo da thread que executa a lógica da tarefa."""
         mode = task_config.get('operation_mode', 'full_pipe')
-        task_id = task_config['id']
-        
-        # Log inicial detalhado do contexto da tarefa
-        separator = "=" * 50
-        self.logger.log(separator, "INFO", task_id)
-        self.logger.log("INICIANDO NOVA TAREFA DE PROCESSAMENTO", "INFO", task_id)
-        self.logger.log(separator, "INFO", task_id)
-        
-        # Informações básicas da tarefa
-        self.logger.log("\n[INFORMAÇÕES BÁSICAS]", "INFO", task_id)
-        self.logger.log(f"ID da Tarefa: {task_id}", "INFO", task_id)
-        self.logger.log(f"Modo de Operação: {mode}", "INFO", task_id)
-        self.logger.log(f"Arquivo de Entrada: {task_config.get('video_path', 'N/A')}", "INFO", task_id)
-        self.logger.log(f"Nome do Arquivo: {os.path.basename(task_config.get('video_path', 'N/A'))}", "INFO", task_id)
-        
-        # Configurações específicas do modo
-        self.logger.log("\n[CONFIGURAÇÕES DE PROCESSAMENTO]", "INFO", task_id)
-        if mode in ['full_pipe', 'sapiens_only']:
-            self.logger.log("Configurações de Transcrição:", "INFO", task_id)
-            self.logger.log(f"- Análise Visual: {'Ativada' if task_config.get('use_visual_analysis') else 'Desativada'}", "INFO", task_id)
-            self.logger.log(f"- Modo de Transcrição: {task_config.get('transcription_mode', 'whisper')}", "INFO", task_id)
-            if task_config.get('transcription_mode') == 'file':
-                self.logger.log(f"- Arquivo de Transcrição: {task_config.get('transcription_path', 'N/A')}", "INFO", task_id)
-                
-        if mode in ['full_pipe', 'render_only']:
-            self.logger.log("Configurações de Renderização:", "INFO", task_id)
-            if mode == 'render_only':
-                self.logger.log(f"- Script de Entrada: {task_config.get('render_script_path', 'N/A')}", "INFO", task_id)
-        
-        # Pipeline de execução previsto
-        self.logger.log("\n[PIPELINE DE EXECUÇÃO]", "INFO", task_id)
-        if mode == 'full_pipe':
-            self.logger.log("Sequência: Transcrição → Análise → Renderização", "INFO", task_id)
-            self.logger.log("1. Transcrição do áudio (Whisper)", "INFO", task_id)
-            self.logger.log("2. Análise e processamento do texto", "INFO", task_id)
-            self.logger.log("3. Renderização do vídeo final", "INFO", task_id)
-        elif mode == 'sapiens_only':
-            self.logger.log("Sequência: Transcrição → Análise", "INFO", task_id)
-            self.logger.log("1. Transcrição do áudio (Whisper)", "INFO", task_id)
-            self.logger.log("2. Análise e processamento do texto", "INFO", task_id)
-        elif mode == 'render_only':
-            self.logger.log("Sequência: Renderização", "INFO", task_id)
-            self.logger.log("1. Renderização do vídeo a partir do script", "INFO", task_id)
-            
-        self.logger.log("\n[SISTEMA]", "INFO", task_id)
-        self.logger.log(f"Thread de Execução: {threading.current_thread().name}", "DEBUG", task_id)
-        self.logger.log(f"Timestamp de Início: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO", task_id)
-        self.logger.log(separator, "INFO", task_id)
-        
-        def send_progress(percentage, stage):
-            """Helper para enviar atualizações de progresso."""
-            try:
-                self.progress_queue.put({
-                    'type': 'progress',
-                    'task_id': task_id,
-                    'percentage': percentage,
-                    'stage': stage
-                })
-            except Exception as e:
-                self.logger.log(f"Erro ao enviar progresso: {e}", "ERROR", task_id)
-        
         try:
-            self.logger.log(f"Iniciando thread de tarefa no modo: {mode}", "DEBUG", task_id)
-            send_progress(0, 'Iniciando')
-            
             if mode in ['sapiens_only', 'full_pipe']:
-                # Pipeline de transcrição e análise
-                self.logger.log("Iniciando pipeline Sapiens...", "INFO", task_id)
                 self.orchestrator.run_sapiens_task(self.progress_queue, task_config, self.stop_event)
-                
             elif mode == 'render_only':
-                # Pipeline de renderização
                 script_path = task_config.get('render_script_path')
-                if not script_path:
-                    raise ValueError("Caminho do arquivo de roteiro não especificado")
-                    
-                self.logger.log("Validando arquivo de roteiro...", "INFO", task_id)
-                
-                # Usa o método de validação dedicado
-                try:
-                    script_data = self._validate_script_json(script_path, task_id)
-                except ValueError as e:
-                    raise ValueError(f"Validação do roteiro falhou: {e}")
-                    
-                # Atualiza configuração com metadados do script
-                try:
-                    with threading.Lock():
-                        self.db.update_task_config(task_id, {
-                            'render_metadata': {
-                                'total_segments': len(script_data['segments']),
-                                'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
-                                'validation_timestamp': str(datetime.now())
-                            }
-                        }, wait=True)
-                except Exception as e:
-                    self.logger.log(f"Aviso: Falha ao atualizar metadados: {e}", "WARNING", task_id)
-                
-                self.logger.log("Iniciando pipeline de renderização...", "INFO", task_id)
-                send_progress(0, 'Preparando Renderização')
-                
-                # Executa renderização
+                if not script_path or not os.path.exists(script_path):
+                    raise ValueError("Arquivo de roteiro para renderização não foi encontrado ou é inválido.")
                 self.orchestrator.run_render_task(self.progress_queue, task_config, self.stop_event)
-                
             else:
-                raise ValueError(f"Modo de operação inválido: {mode}")
-                
+                raise ValueError(f"Modo de operação desconhecido: {mode}")
         except Exception as e:
-            self.logger.log(f"Erro crítico na thread de tarefa: {e}", "ERROR", task_id, exc_info=True)
-            self.logger.log("Stack trace completo:\n" + "".join(traceback.format_exc()), "DEBUG", task_id)
-            
-            try:
-                # Notifica a UI sobre o erro
-                self.progress_queue.put({
-                    'type': 'error',
-                    'task_id': task_id,
-                    'message': str(e),
-                    'details': {
-                        'mode': mode,
-                        'timestamp': str(datetime.now()),
-                        'traceback': traceback.format_exc()
-                    }
-                })
-            except Exception as notify_error:
-                self.logger.log(f"Erro ao notificar UI: {notify_error}", "ERROR", task_id)
-                
-        finally:
-            self.logger.log("Thread de tarefa finalizada.", "DEBUG", task_id)
+            self.logger.log(f"Erro inesperado na thread da tarefa: {e}", "CRITICAL", task_config['id'], exc_info=True)
+            self.progress_queue.put({'type': 'error', 'message': f"Erro inesperado: {e}", 'task_id': task_config['id']})
 
-    def _queue_done(self):
+    def _queue_done(self, message: str):
+        self.logger.log(message, "SUCCESS" if "concluída" in message else "INFO")
         self.is_running_task, self.current_task_id = False, None
-        self.start_button.configure(state="normal"); self.stop_button.configure(state="disabled")
+        self.start_button.configure(state="normal")
+        self.stop_button.configure(text="⏹️ Parar", state="disabled")
         self._load_and_display_queue()
 
     def _process_queues(self):
-        """
-        Processa as filas de log e progresso de forma thread-safe.
-        """
-        if not self.winfo_exists():
-            return
-            
+        """Processa as filas de log e progresso para atualizar a UI."""
         try:
-            # Processa logs em lote para reduzir atualizações da UI
-            logs = []
-            while True:
-                try:
-                    logs.append(self.log_queue.get_nowait())
-                except queue.Empty:
-                    break
-                    
-            if logs:
-                try:
-                    self.log_textbox.configure(state="normal")
-                    for msg in logs:
-                        self.log_textbox.insert("end", msg)
-                    self.log_textbox.see("end")
-                    self.log_textbox.configure(state="disabled")
-                except Exception as e:
-                    logging.error(f"Erro ao processar logs: {e}", exc_info=True)
-            
-            # Processa itens da fila de progresso
-            while True:
-                try:
-                    q_item = self.progress_queue.get_nowait()
-                    task_id = q_item.get('task_id')
-                    
-                    if not task_id:
-                        continue
-                        
-                    if q_item['type'] == 'progress':
-                        percentage = q_item.get('percentage', 0)  # Valor default de 0%
-                        stage = q_item.get('stage', STATUS_PROCESSING)
-                        
-                        def update_progress():
-                            if not self.winfo_exists():
-                                return
-                            try:
-                                if isinstance(percentage, (int, float)):
-                                    progress_text = self._text_progress_bar(float(percentage))
-                                else:
-                                    progress_text = self._text_progress_bar(0)
-                                    self.logger.log(f"Aviso: percentage inválido ({percentage})", "WARNING")
-                                    
-                                self._update_tree_item(
-                                    task_id,
-                                    {
-                                        'Progresso': progress_text,
-                                        'Status': f"⚙️ {stage}"
-                                    }
-                                )
-                            except Exception as e:
-                                logging.error(f"Erro ao atualizar progresso: {e}", exc_info=True)
-                                
-                        self.after(0, update_progress)
-                        
-                    elif q_item['type'] in ['error', 'interrupted', 'done']:
-                        self.after(0, lambda: self._task_done_handler(task_id, q_item))
-                        
-                    elif q_item['type'] == 'sapiens_done':
-                        self.after(0, lambda: self._sapiens_done_handler(task_id, q_item))
-                        
-                except queue.Empty:
-                    break
-                except Exception as e:
-                    logging.error(f"Erro ao processar item da fila: {e}", exc_info=True)
-                    
-        except Exception as e:
-            logging.error(f"Erro em _process_queues: {e}", exc_info=True)
-        finally:
-            # Agenda próxima execução
-            if self.winfo_exists():
-                self.after(100, self._process_queues)
+            while msg := self.log_queue.get_nowait():
+                self.log_textbox.configure(state="normal")
+                self.log_textbox.insert("end", msg)
+                self.log_textbox.see("end")
+                self.log_textbox.configure(state="disabled")
+        except queue.Empty: pass
+
+        try:
+            while q_item := self.progress_queue.get_nowait():
+                task_id = q_item['task_id']
+                item_type = q_item['type']
+
+                if item_type == 'progress':
+                    self._update_tree_item(task_id, {'Progresso': self._text_progress_bar(q_item['percentage']), 'Status': f"⚙️ {q_item.get('stage', STATUS_PROCESSING)}"})
+                elif item_type in ['error', 'interrupted', 'done']:
+                    self._task_done_handler(task_id, q_item)
+                elif item_type == 'sapiens_done':
+                    self._sapiens_done_handler(task_id, q_item)
+        except queue.Empty: pass
+
+        self.after(100, self._process_queues)
 
     def _task_done_handler(self, task_id: str, q_item: Dict[str, Any]):
+        """Lida com a finalização de uma tarefa (sucesso, erro ou interrupção)."""
+        status_map = {'error': STATUS_ERROR, 'interrupted': STATUS_INTERRUPTED, 'done': STATUS_COMPLETED}
+        self.db.update_task_status(task_id, status_map[q_item['type']])
+        self.is_running_task = False
+
+        if not self.stop_event.is_set():
+            self.after(500, self._start_next_task)
+        else:
+            self._queue_done("Fila parada pelo usuário.")
+        self._load_and_display_queue()
+
+    def _sapiens_done_handler(self, task_id: str, q_item: Dict[str, Any]):
         """
-        Manipula a conclusão de uma tarefa de forma thread-safe.
+        Lida com a conclusão bem-sucedida da etapa 'Sapiens'.
+        Decide se deve finalizar ou iniciar a renderização.
         """
-        try:
-            # 1. Atualiza o status no banco de dados
-            status_map = {
-                'error': STATUS_ERROR,
-                'interrupted': STATUS_INTERRUPTED,
-                'done': STATUS_COMPLETED
-            }
-            self.db.update_task_status(task_id, status_map[q_item['type']])
-            
-            # 2. Atualiza o estado interno de forma thread-safe
-            with threading.Lock():
-                self.is_running_task = False
-            
-            # 3. Agenda atualizações da UI com delays seguros
-            if not self.stop_event.is_set():
-                # Primeiro agenda a atualização da UI
-                self.after(50, lambda: self._safe_update_ui(task_id))
-                # Depois agenda o início da próxima tarefa
-                self.after(100, self._start_next_task)
-            else:
-                # Em caso de parada, primeiro atualiza UI, depois finaliza
-                self.after(50, lambda: self._safe_update_ui(task_id))
-                self.after(100, self._queue_done)
-                
-        except Exception as e:
-            self.logger.log(f"Erro em _task_done_handler: {e}", "ERROR", task_id, exc_info=True)
-            
-    def _safe_update_ui(self, task_id: str):
-        """
-        Método thread-safe para atualizar a UI.
-        """
-        try:
-            if not self.winfo_exists():
-                return
+        task_config = self.db.get_tasks_by_ids([task_id])[0]
+        if not task_config:
+            self.logger.log(f"Tarefa {task_id} não encontrada no DB após Sapiens. Abortando.", "ERROR")
+            self._task_done_handler(task_id, {'type': 'error', 'message': 'Tarefa desapareceu do DB.'})
+            return
+
+        if task_config.get('operation_mode') == 'full_pipe':
+            self.logger.log(f"Pipeline 'Sapiens' concluído. Roteiro gerado. Iniciando renderização...", "INFO", task_id)
+            self.db.update_task_config(task_id, {'render_script_path': q_item['script_path']}, wait=True)
+            self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
             self._load_and_display_queue()
-        except Exception as e:
-            self.logger.log(f"Erro ao atualizar UI: {e}", "ERROR", task_id, exc_info=True)
 
-    def _validate_script_json(self, script_path, task_id):
-        """
-        Valida o arquivo JSON do roteiro com verificações robustas de tipo e valor.
-        Retorna os dados validados ou levanta ValueError com mensagem detalhada.
-        """
-        try:
-            # 1. Leitura e validação do arquivo
-            try:
-                with open(script_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Erro de sintaxe no arquivo JSON: {e}")
-            except IOError as e:
-                raise ValueError(f"Erro ao ler arquivo: {e}")
-                
-            # 2. Validação da estrutura básica
-            if not isinstance(data, dict):
-                raise ValueError("JSON inválido: raiz deve ser um objeto/dicionário")
-                
-            segments = data.get('segments')
-            if segments is None:
-                raise ValueError("JSON inválido: propriedade 'segments' não encontrada")
-                
-            if not isinstance(segments, list):
-                raise ValueError("JSON inválido: 'segments' deve ser uma lista")
-                
-            if not segments:
-                raise ValueError("JSON inválido: lista de segmentos está vazia")
-                
-            # 3. Validação detalhada dos segmentos
-            total_duration = 0.0
-            prev_end = None
-            
-            for i, segment in enumerate(segments):
-                # 3.1 Validação de tipo
-                if not isinstance(segment, dict):
-                    raise ValueError(f"Segmento {i} inválido: deve ser um objeto/dicionário")
-                
-                # 3.2 Validação das chaves obrigatórias
-                if 'start_time' not in segment:
-                    raise ValueError(f"Segmento {i} inválido: campo 'start_time' não encontrado")
-                if 'end_time' not in segment:
-                    raise ValueError(f"Segmento {i} inválido: campo 'end_time' não encontrado")
-                
-                # 3.3 Validação dos valores de tempo
-                try:
-                    start = float(segment['start_time'])
-                    end = float(segment['end_time'])
-                except (ValueError, TypeError):
-                    raise ValueError(
-                        f"Segmento {i} inválido: 'start_time' e 'end_time' devem ser números "
-                        f"(encontrado {type(segment['start_time']).__name__} e {type(segment['end_time']).__name__})"
-                    )
-                
-                # 3.4 Validação de lógica temporal
-                if start < 0 or end < 0:
-                    raise ValueError(f"Segmento {i} inválido: timestamps não podem ser negativos")
-                    
-                if start >= end:
-                    raise ValueError(
-                        f"Segmento {i} inválido: start_time ({start}) deve ser menor que end_time ({end})"
-                    )
-                
-                # 3.5 Validação de sequência (opcional)
-                if prev_end is not None and start < prev_end:
-                    self.logger.log(
-                        f"Aviso: Segmento {i} começa antes do fim do segmento anterior "
-                        f"(overlap de {prev_end - start:.2f}s)",
-                        "WARNING", task_id
-                    )
-                
-                prev_end = end
-                total_duration += (end - start)
-            
-            # 4. Validação final
-            if total_duration <= 0:
-                raise ValueError("Duração total do roteiro é zero ou negativa")
-                
-            self.logger.log(
-                f"Roteiro validado com sucesso: {len(segments)} segmentos, "
-                f"duração total de {total_duration:.2f}s",
-                "SUCCESS", task_id
-            )
-            
-            return data
-            
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Erro inesperado ao validar roteiro: {str(e)}")
-            
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Erro ao decodificar JSON: {str(e)}")
-        except Exception as e:
-            raise ValueError(f"Erro ao validar script: {str(e)}")
-
-    def _prepare_render_task(self, task_id, script_path):
-        """Prepara a tarefa para renderização."""
-        try:
-            # 1. Valida o script JSON
-            script_data = self._validate_script_json(script_path, task_id)
-            
-            # 2. Atualiza configuração de forma atômica
-            with threading.Lock():
-                self.db.update_task_config(task_id, {
-                    'render_script_path': script_path,
-                    'render_config': {
-                        'total_segments': len(script_data['segments']),
-                        'total_duration': sum(seg['end'] - seg['start'] for seg in script_data['segments']),
-                        'timestamp': str(datetime.now())
-                    }
-                }, wait=True)
-                self.db.update_task_status(task_id, STATUS_AWAIT_RENDER, wait=True)
-                
-            return True
-            
-        except Exception as e:
-            self.logger.log(f"Erro ao preparar renderização: {e}", "ERROR", task_id, exc_info=True)
-            return False
-
-    def _sapiens_done_handler(self, task_id, q_item):
-        """Manipula a conclusão do pipeline Sapiens com transição segura para renderização."""
-        try:
-            if not self.winfo_exists():
-                return
-                
-            tasks = self.db.get_tasks_by_ids([task_id])
-            if not tasks:
-                raise ValueError("Tarefa não encontrada no banco de dados")
-            task_config = tasks[0]
-            
-            if task_config.get('operation_mode') == 'full_pipe':
-                # 1. Validações iniciais e do roteiro gerado
-                if 'script_path' not in q_item:
-                    raise ValueError("Caminho do script não fornecido")
-                    
-                script_path = q_item['script_path']
-                if not os.path.exists(script_path):
-                    raise ValueError(f"Arquivo de script não encontrado: {script_path}")
-                    
-                self.logger.log(f"Pipeline 'Sapiens' concluído. Validando roteiro gerado...", "INFO", task_id)
-                
-                # Validação robusta do roteiro antes de prosseguir
-                try:
-                    with open(script_path, 'r', encoding='utf-8') as f:
-                        script_data = json.load(f)
-                    
-                    segments = script_data.get('segments', [])
-                    if not isinstance(segments, list) or not segments:
-                        raise ValueError("Roteiro inválido: lista de segmentos vazia ou ausente")
-                        
-                    # Calcula duração total usando as chaves corretas
-                    total_duration = 0.0
-                    for i, segment in enumerate(segments):
-                        if not isinstance(segment, dict):
-                            raise ValueError(f"Segmento {i} inválido: formato incorreto")
-                            
-                        if 'start_time' not in segment or 'end_time' not in segment:
-                            raise ValueError(f"Segmento {i} inválido: campos start_time/end_time ausentes")
-                            
-                        try:
-                            start = float(segment['start_time'])
-                            end = float(segment['end_time'])
-                            if end <= start:
-                                raise ValueError(f"Segmento {i} inválido: end_time deve ser maior que start_time")
-                            total_duration += (end - start)
-                        except ValueError as e:
-                            raise ValueError(f"Segmento {i} inválido: erro ao converter timestamps: {e}")
-                    
-                    if total_duration <= 0:
-                        raise ValueError("Duração total do roteiro é zero ou negativa")
-                        
-                    # Atualiza metadados do roteiro no banco
-                    self.db.update_task_config(task_id, {
-                        'render_metadata': {
-                            'total_segments': len(segments),
-                            'total_duration': total_duration,
-                            'validation_timestamp': str(datetime.now())
-                        }
-                    }, wait=True)
-                    
-                    self.logger.log(f"Roteiro validado com sucesso: {len(segments)} segmentos, {total_duration:.2f}s", "SUCCESS", task_id)
-                    
-                except Exception as e:
-                    self.logger.log(f"Erro ao validar roteiro gerado: {e}", "ERROR", task_id, exc_info=True)
-                    self._task_done_handler(task_id, {
-                        'type': 'error',
-                        'message': f"Validação do roteiro falhou: {e}",
-                        'task_id': task_id
-                    })
-                    return
-                
-                # 2. Prepara a tarefa para renderização
-                if not self._prepare_render_task(task_id, script_path):
-                    raise ValueError("Falha ao preparar tarefa para renderização")
-                
-                # 3. Atualiza UI
-                def update_ui():
-                    if not self.winfo_exists():
-                        return
-                    self._load_and_display_queue()
-                self.after(0, update_ui)
-                
-                # 4. Inicia renderização com delay de segurança
-                def start_render_safe():
-                    if not self.winfo_exists():
-                        return
-                        
-                    try:
-                        # Obtém configuração atualizada
-                        updated_tasks = self.db.get_tasks_by_ids([task_id])
-                        if not updated_tasks:
-                            raise ValueError("Tarefa não encontrada após atualização")
-                        updated_task = updated_tasks[0]
-                        
-                        self.logger.log("Iniciando thread de renderização...", "INFO", task_id)
-                        
-                        # Sinal inicial de progresso
-                        self.progress_queue.put({
-                            'type': 'progress',
-                            'task_id': task_id,
-                            'percentage': 0,
-                            'stage': 'Iniciando Renderização'
-                        })
-                        
-                        # Inicia thread de renderização
-                        render_thread = threading.Thread(
-                            target=self.orchestrator.run_render_task,
-                            args=(self.progress_queue, updated_task, self.stop_event),
-                            daemon=True,
-                            name=f"RenderThread-{task_id[:8]}"
-                        )
-                        render_thread.start()
-                        
-                    except Exception as e:
-                        self.logger.log(f"Erro ao iniciar renderização: {e}", "ERROR", task_id, exc_info=True)
-                        self._task_done_handler(task_id, {
-                            'type': 'error',
-                            'task_id': task_id,
-                            'message': f"Erro ao iniciar renderização: {e}"
-                        })
-                
-                self.after(100, start_render_safe)
-                
-            else:
-                self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
-                
-        except Exception as e:
-            self.logger.log(f"Erro crítico em _sapiens_done_handler: {e}", "ERROR", task_id, exc_info=True)
-            self._task_done_handler(task_id, {
-                'type': 'error',
-                'task_id': task_id,
-                'message': f"Erro crítico no handler: {e}"
-            })
+            updated_task = self.db.get_tasks_by_ids([task_id])[0]
+            threading.Thread(target=self.orchestrator.run_render_task, args=(self.progress_queue, updated_task, self.stop_event), daemon=True).start()
+        else:
+            self._task_done_handler(task_id, {'type': 'done', 'task_id': task_id})
 
     def _load_and_display_queue(self):
-        selection = self.tree.selection(); valid_selection = [s for s in selection if self.tree.exists(s)]
+        """Recarrega todas as tarefas do DB e atualiza a árvore de exibição."""
+        selection = self.tree.selection()
+        scroll_pos = self.tree.yview()
+
         self.tree.delete(*self.tree.get_children())
+
         status_map = {STATUS_QUEUED:'🕘', STATUS_COMPLETED:'✅', STATUS_ERROR:'❌', STATUS_INTERRUPTED:'⏸️', STATUS_AWAIT_RENDER:'▶️', STATUS_PROCESSING:'⚙️'}
         mode_map = {'full_pipe': 'Completo', 'sapiens_only': 'Roteiro', 'render_only': 'Render'}
+
         for task in self.db.get_all_tasks():
             status_icon = "▶️" if task['status'] == STATUS_PROCESSING and task['id'] == self.current_task_id else status_map.get(task['status'], '⚙️')
-            self.tree.insert("", "end", iid=task['id'], values=(f"{status_icon} {task['status']}", os.path.basename(task.get('video_path','')), mode_map.get(task.get('operation_mode'),'N/D'), "✓" if task.get('use_visual_analysis') else "✗", ""))
-        if valid_selection:
-            try: self.tree.selection_set(valid_selection)
-            except Exception as e: self.logger.log(f"Não foi possível restaurar a seleção da árvore: {e}", "DEBUG")
+            self.tree.insert("", "end", iid=task['id'], values=(
+                f"{status_icon} {task['status']}",
+                os.path.basename(task.get('video_path','')),
+                mode_map.get(task.get('operation_mode'),'N/D'),
+                "✓" if task.get('use_visual_analysis') else "✗",
+                ""
+            ))
 
-    def _update_tree_item(self, iid, values_dict):
+        if selection:
+            try: self.tree.selection_set(selection)
+            except Exception: pass
+        self.tree.yview_moveto(scroll_pos[0])
+
+
+    def _update_tree_item(self, iid: str, values_dict: Dict[str, str]):
+        """Atualiza colunas específicas de um item na árvore de forma eficiente."""
         if not self.tree.exists(iid): return
-        current = list(self.tree.item(iid, 'values')); cols = self.tree['columns']
+        current_values = list(self.tree.item(iid, 'values'))
+        cols = self.tree['columns']
         for col_name, val in values_dict.items():
-            if col_name in cols: current[cols.index(col_name)] = val
-        self.tree.item(iid, values=tuple(current))
+            if col_name in cols:
+                current_values[cols.index(col_name)] = val
+        self.tree.item(iid, values=tuple(current_values))
 
-    def _text_progress_bar(self, p, w=15): p=max(0,min(100,p)); f=int(w*p//100); return f"|{'█'*f}{'░'*(w-f)}| {p:.1f}%"
-    def _open_presets_manager(self): PresetsManager(self, self.db, lambda: self.db.get_tasks_by_ids(list(self.tree.selection())))
-    def _open_advanced_settings(self): AdvancedSettings(self, self.config, self.logger)
+    def _text_progress_bar(self, p: float, w: int=15) -> str:
+        p=max(0,min(100,p)); f=int(w*p//100); return f"|{'█'*f}{'░'*(w-f)}| {p:.1f}%"
 
-
+    def _open_presets_manager(self):
+        PresetsManager(self, self.db, lambda: self.db.get_tasks_by_ids(list(self.tree.selection())))
+    def _open_advanced_settings(self):
+        AdvancedSettings(self, self.config, self.logger)

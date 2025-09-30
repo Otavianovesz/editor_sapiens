@@ -8,45 +8,104 @@ import queue
 import threading
 import json
 import dataclasses
-import logging
-from typing import List, Any, Optional, Dict, ClassVar
-from threading import Lock
+import re
+from datetime import datetime, timedelta
+from typing import List, Any, Optional, Dict, Union
 
 from .config import Config
 from utils.logger import Logger
+
+# --- Módulo de Análise de Legendas (SRT/VTT) ---
+
+class SubtitleParser:
+    """
+    Responsável por ler arquivos de legenda (.srt, .vtt) e convertê-los
+    para o formato de lista de palavras compatível com o ContentAnalyzer.
+    """
+    def __init__(self, logger: Logger):
+        self.logger = logger
+        self.Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
+
+    def _time_str_to_seconds(self, time_str: str) -> float:
+        """Converte uma string de tempo (HH:MM:SS,ms) para segundos."""
+        time_str = time_str.replace(',', '.')
+        try:
+            dt = datetime.strptime(time_str, '%H:%M:%S.%f')
+        except ValueError:
+            dt = datetime.strptime(time_str, '%H:%M:%S')
+        return timedelta(hours=dt.hour, minutes=dt.minute, seconds=dt.second, microseconds=dt.microsecond).total_seconds()
+
+    def parse(self, file_path: str, task_id: str) -> List[Any]:
+        """Lê o arquivo de legenda e retorna uma lista de 'palavras'."""
+        self.logger.log(f"Iniciando análise do arquivo de legenda: {os.path.basename(file_path)}", "INFO", task_id)
+        words = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})[\s\S]*?\n([\s\S]+?)(?=\n\n|\Z)', re.MULTILINE)
+            
+            for match in pattern.finditer(content):
+                start_time_s = self._time_str_to_seconds(match.group(1))
+                end_time_s = self._time_str_to_seconds(match.group(2))
+                text = match.group(3).strip().replace('\n', ' ')
+
+                sub_words = [w for w in text.split(' ') if w]
+                if not sub_words: continue
+
+                duration_per_word = (end_time_s - start_time_s) / len(sub_words)
+                current_time = start_time_s
+
+                for i, word_text in enumerate(sub_words):
+                    word_start = current_time
+                    word_end = current_time + duration_per_word
+                    words.append(self.Word(start=word_start, end=word_end, word=word_text))
+                    current_time = word_end
+
+            self.logger.log(f"Análise da legenda concluída. {len(words)} palavras extraídas.", "SUCCESS", task_id)
+            return words
+
+        except FileNotFoundError:
+            self.logger.log(f"Arquivo de legenda não encontrado: {file_path}", "ERROR", task_id)
+            return []
+        except Exception as e:
+            self.logger.log(f"Erro inesperado ao analisar arquivo de legenda: {e}", "CRITICAL", task_id, exc_info=True)
+            return []
+
+
+# --- Módulos de Processamento de Mídia e IA ---
 
 class MediaProcessor:
     """Responsável pela extração de áudio de arquivos de vídeo."""
     def __init__(self, logger: Logger):
         self.logger = logger
-        self._temp_files = set()
-        self._active_task_id = None
 
     def extract_audio(self, video_filepath: str, task_id: str) -> Optional[str]:
-        self._active_task_id = task_id
         self.logger.log(f"Iniciando extração de áudio de '{os.path.basename(video_filepath)}'.", "INFO", task_id)
         try:
             import ffmpeg
         except ImportError:
             self.logger.log("Módulo 'ffmpeg-python' não encontrado! Instale com 'pip install ffmpeg-python'", "CRITICAL", task_id)
             return None
-        
+
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_f:
                 output_audio_path = temp_f.name
-                self._temp_files.add(output_audio_path)
-            
+
             creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
             stream = ffmpeg.input(video_filepath).output(output_audio_path, acodec='pcm_s16le', ar='16000', ac=1)
             args = ffmpeg.compile(stream, overwrite_output=True)
-            
-            result = subprocess.run(args, capture_output=True, creationflags=creation_flags)
+
+            result = subprocess.run(args, capture_output=True, creationflags=creation_flags, timeout=600)
             if result.returncode != 0:
                 raise ffmpeg.Error('ffmpeg', stdout=result.stdout, stderr=result.stderr)
 
             file_size = os.path.getsize(output_audio_path) / (1024 * 1024)
             self.logger.log(f"Áudio extraído com sucesso para '{output_audio_path}' (Tamanho: {file_size:.2f} MB).", "SUCCESS", task_id)
             return output_audio_path
+        except subprocess.TimeoutExpired:
+            self.logger.log("Timeout: A extração de áudio demorou mais de 10 minutos e foi cancelada.", "ERROR", task_id)
+            return None
         except ffmpeg.Error as e:
             self.logger.log(f"ERRO FFmpeg na extração: {e.stderr.decode() if e.stderr else e}", "ERROR", task_id)
             return None
@@ -54,275 +113,74 @@ class MediaProcessor:
             self.logger.log(f"ERRO inesperado na extração de áudio: {e}", "CRITICAL", task_id, exc_info=True)
             return None
 
-    def cleanup(self) -> None:
-        """Limpa todos os arquivos temporários criados por este processador."""
-        task_id = self._active_task_id or 'Global'
-        for path in list(self._temp_files):
+    def cleanup(self, path: Optional[str], task_id: str):
+        if path and os.path.exists(path):
             try:
-                if os.path.exists(path):
-                    os.remove(path)
-                    self.logger.log(f"Arquivo temporário '{path}' removido.", "DEBUG", task_id)
-                self._temp_files.remove(path)
+                os.remove(path)
+                self.logger.log(f"Arquivo temporário '{path}' removido.", "DEBUG", task_id)
             except OSError as e:
                 self.logger.log(f"Falha ao remover arquivo temporário '{path}': {e}", "WARNING", task_id)
-            except Exception as e:
-                self.logger.log(f"Erro inesperado ao limpar arquivo '{path}': {e}", "ERROR", task_id)
 
 class AudioTranscriber:
     """Responsável pela transcrição de áudio usando o modelo Whisper."""
-    # Cache de modelo em nível de classe para Thread-Safety
-    _model_cache: ClassVar[Optional[Any]] = None
-    _model_lock: ClassVar[Lock] = Lock()
-
     def __init__(self, logger: Logger, config: Config):
         self.logger = logger
         self.config = config
-        self._active_task_id = None
+        self.model = None
 
-    @classmethod
-    def cleanup(cls, logger=None, task_id=None) -> None:
-        """
-        Libera recursos do modelo Whisper de forma thread-safe com garantias extras.
-        
-        Args:
-            logger: Logger opcional para registrar o processo de limpeza
-            task_id: ID da tarefa para contexto de log
-        """
-        with cls._model_lock:
-            if cls._model_cache:
-                try:
-                    # 1. Tentativa de descarregamento CUDA
-                    try:
-                        import torch
-                        
-                        # 1.1 Move modelo para CPU primeiro
-                        if hasattr(cls._model_cache, 'model'):
-                            if hasattr(cls._model_cache.model, 'to'):
-                                try:
-                                    cls._model_cache.model.to('cpu')
-                                    if logger:
-                                        logger.log("Modelo movido para CPU", "DEBUG", task_id)
-                                except Exception as e:
-                                    if logger:
-                                        logger.log(f"Aviso ao mover modelo para CPU: {e}", "WARNING", task_id)
-                        
-                        # 1.2 Limpa cache CUDA
-                        if torch.cuda.is_available():
-                            try:
-                                torch.cuda.empty_cache()
-                                if logger:
-                                    logger.log("Cache CUDA limpo", "DEBUG", task_id)
-                            except Exception as e:
-                                if logger:
-                                    logger.log(f"Aviso ao limpar cache CUDA: {e}", "WARNING", task_id)
-                                    
-                    except ImportError:
-                        if logger:
-                            logger.log("PyTorch não disponível, pulando limpeza CUDA", "DEBUG", task_id)
-                    except Exception as e:
-                        if logger:
-                            logger.log(f"Erro na limpeza CUDA: {e}", "WARNING", task_id)
+    def _load_model(self, task_id):
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            self.logger.log("Módulo 'faster_whisper' não encontrado! Instale com 'pip install faster-whisper'", "CRITICAL", task_id)
+            raise
 
-                    # 2. Desalocação do modelo
-                    try:
-                        # 2.1 Remove referências internas primeiro
-                        if hasattr(cls._model_cache, 'model'):
-                            try:
-                                delattr(cls._model_cache, 'model')
-                            except Exception as e:
-                                if logger:
-                                    logger.log(f"Aviso ao remover atributo 'model': {e}", "WARNING", task_id)
-                        
-                        # 2.2 Deleta o objeto principal
-                        del cls._model_cache
-                        cls._model_cache = None
-                        
-                        if logger:
-                            logger.log("Modelo Whisper desalocado com sucesso", "DEBUG", task_id)
-                            
-                    except Exception as e:
-                        if logger:
-                            logger.log(f"Erro ao deletar modelo: {e}", "WARNING", task_id)
-                        cls._model_cache = None  # Garante que será None mesmo em caso de erro
-                    
-                    # 3. Força coleta de lixo
-                    try:
-                        import gc
-                        gc.collect()
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()  # Segunda passada de limpeza
-                    except Exception:
-                        pass  # Silencioso se falhar
-                        
-                except Exception as e:
-                    if logger:
-                        logger.log(f"Erro crítico na limpeza do modelo: {e}", "ERROR", task_id)
-                    cls._model_cache = None  # Última garantia
-                    raise  # Re-levanta para logging externo se necessário
+        model_name = self.config.get("whisper_model_size")
+        device = self.config.get("whisper_device")
+        compute_type = self.config.get("whisper_compute_type")
+        download_root = "models"
 
-    @classmethod
-    def _load_model(cls, logger, config, task_id):
-        with cls._model_lock:
-            if cls._model_cache is not None:
-                return
-                
-            try:
-                from faster_whisper import WhisperModel
-            except ImportError:
-                logger.log("Módulo 'faster_whisper' não encontrado! Instale com 'pip install faster-whisper'", "CRITICAL", task_id)
-                raise
-
-            model_name = config.get("whisper_model_size")
-            device = config.get("whisper_device")
-            compute_type = config.get("whisper_compute_type")
-            download_root = "models"
-            
-            logger.log(f"Carregando modelo Whisper '{model_name}' (Dispositivo: {device}, Tipo: {compute_type})...", "INFO", task_id)
-            try:
-                try:
-                    logger.log(f"Verificando cache local para o modelo '{model_name}'...", "INFO", task_id)
-                    cls._model_cache = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=True)
-                    logger.log("Modelo encontrado no cache local. Carregamento rápido.", "SUCCESS", task_id)
-                except Exception:
-                    logger.log(f"Modelo '{model_name}' não encontrado no cache local. Iniciando download...", "WARNING", task_id)
-                    logger.log("--> ESTE PROCESSO PODE LEVAR VÁRIOS MINUTOS E USAR GIGABYTES DE ESPAÇO. <--", "WARNING", task_id)
-                    logger.log("--> Por favor, aguarde. O aplicativo pode parecer travado durante o download. <--", "WARNING", task_id)
-                    cls._model_cache = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=False)
-                    logger.log("Download do modelo concluído com sucesso!", "SUCCESS", task_id)
-            except Exception as e:
-                logger.log(f"ERRO CRÍTICO ao baixar ou carregar modelo Whisper: {e}", "CRITICAL", task_id, exc_info=True)
-                raise
-
-    def cleanup(self, task_id: str = None):
-        """Desaloca explicitamente o modelo Whisper da memória/GPU, liberando recursos críticos."""
-        with self._model_lock:
-            if self._model_cache:
-                try:
-                    # Importação local para evitar dependências globais desnecessárias
-                    import torch 
-                    
-                    if hasattr(self._model_cache, 'model') and hasattr(self._model_cache.model, 'to'):
-                        try:
-                            # Primeiro move o modelo para CPU se estiver em CUDA
-                            self._model_cache.model.to('cpu')
-                            self.logger.log("Modelo movido para CPU antes da desalocação.", "DEBUG", task_id)
-                        except Exception as e:
-                            self.logger.log(f"Aviso ao mover modelo para CPU: {e}", "WARNING", task_id)
-                    
-                    # Força liberação de VRAM CUDA
-                    if torch.cuda.is_available():
-                        try:
-                            torch.cuda.empty_cache()
-                            self.logger.log("Cache CUDA limpo com sucesso.", "DEBUG", task_id)
-                        except Exception as e:
-                            self.logger.log(f"Aviso ao limpar cache CUDA: {e}", "WARNING", task_id)
-                    
-                    # Deleta o objeto do modelo
-                    try:
-                        del self._model_cache
-                        self._model_cache = None
-                        self.logger.log("Objeto do modelo Whisper limpo da memória.", "DEBUG", task_id)
-                    except Exception as e:
-                        self.logger.log(f"Aviso ao deletar modelo: {e}", "WARNING", task_id)
-
-                except Exception as e:
-                    # Em caso de falha, garante que o modelo seja marcado como None
-                    self._model_cache = None
-                    self.logger.log(f"Falha na desalocação otimizada do modelo Whisper: {e}", "WARNING", task_id)
-                    
-                # Força coleta de lixo após limpeza
-                try:
-                    import gc
-                    gc.collect()
-                except Exception:
-                    pass
+        self.logger.log(f"Carregando modelo Whisper '{model_name}' (Dispositivo: {device}, Tipo: {compute_type})...", "INFO", task_id)
+        try:
+            self.model = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=True)
+            self.logger.log("Modelo encontrado no cache local. Carregamento rápido.", "SUCCESS", task_id)
+        except (ValueError, FileNotFoundError):
+            self.logger.log(f"Modelo '{model_name}' não encontrado no cache local. Iniciando download...", "WARNING", task_id)
+            self.logger.log("--> ESTE PROCESSO PODE LEVAR VÁRIOS MINUTOS E USAR GIGABYTES DE ESPAÇO. <--", "WARNING", task_id)
+            self.logger.log("--> Por favor, aguarde. O aplicativo pode parecer travado durante o download. <--", "WARNING", task_id)
+            self.model = WhisperModel(model_name, device=device, compute_type=compute_type, download_root=download_root, local_files_only=False)
+            self.logger.log("Download do modelo concluído com sucesso!", "SUCCESS", task_id)
+        except Exception as e:
+            self.logger.log(f"ERRO CRÍTICO ao baixar ou carregar modelo Whisper: {e}", "CRITICAL", task_id, exc_info=True)
+            raise
 
     def transcribe(self, path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Any]:
-        """
-        Transcreve um arquivo de áudio usando o modelo Whisper.
-        
-        Args:
-            path: Caminho do arquivo de áudio
-            pq: Queue para progresso
-            task_id: ID da tarefa
-            stop_event: Evento para interrupção
-            
-        Returns:
-            Lista de palavras transcritas com timestamps
-        """
-        if not path or not os.path.exists(path):
-            self.logger.log(f"Arquivo de áudio não encontrado: {path}", "ERROR", task_id)
-            return []
+        if self.model is None:
+            self._load_model(task_id)
 
-        self._active_task_id = task_id
-        self.logger.task_id_filter.set_task_id(task_id)
-        
-        try:
-            # Garantir que o modelo está carregado
-            if AudioTranscriber._model_cache is None:
-                try:
-                    AudioTranscriber._load_model(self.logger, self.config, task_id)
-                except Exception as e:
-                    self.logger.log(f"Erro ao carregar modelo Whisper: {e}", "CRITICAL", task_id)
-                    return []
-                    
-            # Usar o modelo do cache da classe
-            model = AudioTranscriber._model_cache
+        lang = self.config.get("whisper_language") or None
+        self.logger.log(f"Iniciando transcrição (Idioma: {'Automático' if lang is None else lang}).", "INFO", task_id)
 
-            lang = self.config.get("whisper_language") or None
-            self.logger.log(f"Iniciando transcrição (Idioma: {'Automático' if lang is None else lang}).", "INFO", task_id)
-            
-            try:
-                segments_gen, info = model.transcribe(path, language=lang, word_timestamps=True, vad_filter=True)
-            except Exception as e:
-                self.logger.log(f"Erro durante a transcrição: {e}", "ERROR", task_id, exc_info=True)
+        segments_gen, info = self.model.transcribe(path, language=lang, word_timestamps=True, vad_filter=True)
+        self.logger.log(f"Idioma detectado: {info.language} (Probabilidade: {info.language_probability:.2f}), Duração: {info.duration:.2f}s", "INFO", task_id)
+
+        Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
+        all_words = []
+
+        for segment in segments_gen:
+            if stop_event.is_set():
+                self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
                 return []
 
-            if info.duration <= 0:
-                self.logger.log("Duração inválida do áudio detectada.", "ERROR", task_id)
-                return []
-                
-            if not info.language or info.language_probability < 0.5:
-                self.logger.log(f"Aviso: Baixa confiança na detecção do idioma ({info.language}, {info.language_probability:.2f})", "WARNING", task_id)
-                
-            self.logger.log(f"Idioma detectado: {info.language} (Probabilidade: {info.language_probability:.2f}), Duração: {info.duration:.2f}s", "INFO", task_id)
-            
-            # Otimização de memória: cria uma classe leve para armazenar apenas os dados essenciais
-            Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
-            all_words = []
-            
-            try:
-                for segment in segments_gen:
-                    if stop_event.is_set():
-                        self.logger.log("Transcrição interrompida pelo usuário.", "WARNING", task_id)
-                        return []
-                    
-                    # Pipeline: Extração (0-5%) -> Transcrição (5-15%) -> Visual (15-20%) -> Conteúdo (20-25%) -> Render (25-99%)
-                    progress = 5 + (segment.end / info.duration) * 10 if info.duration > 0 else 15
-                    pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
-                    
-                    if hasattr(segment, "words") and segment.words:
-                        # Cria cópias leves dos objetos de palavra para economizar memória
-                        for word_obj in segment.words:
-                            all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
+            progress = 11 + (segment.end / info.duration) * 39 if info.duration > 0 else 50
+            pq.put({'type': 'progress', 'stage': 'Transcrevendo', 'percentage': progress, 'task_id': task_id})
 
-                if len(all_words) == 0:
-                    self.logger.log("Nenhuma palavra foi transcrita. Possível problema com o áudio.", "ERROR", task_id)
-                    return []
+            if hasattr(segment, "words") and segment.words:
+                for word_obj in segment.words:
+                    all_words.append(Word(start=word_obj.start, end=word_obj.end, word=word_obj.word))
 
-                self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
-                return all_words
-                
-            except Exception as e:
-                self.logger.log(f"Erro durante o processamento de segmentos: {e}", "ERROR", task_id, exc_info=True)
-                return []
-                
-        except Exception as e:
-            self.logger.log(f"Erro fatal durante a transcrição: {e}", "CRITICAL", task_id, exc_info=True)
-            return []
-            
-        finally:
-            self.logger.task_id_filter.set_task_id(None)
+        self.logger.log(f"Transcrição finalizada. Total de {len(all_words)} palavras encontradas.", "SUCCESS", task_id)
+        return all_words
 
 class VisualAnalyzer:
     """Responsável pela análise visual de gestos e olhar usando MediaPipe."""
@@ -330,19 +188,6 @@ class VisualAnalyzer:
         self.logger = logger
         self.config = config
         self.pose_model = None
-        self._mp = None
-        self._active_task_id = None
-        
-    def cleanup(self) -> None:
-        """Libera recursos do MediaPipe."""
-        if self._mp:
-            try:
-                del self._mp
-                self._mp = None
-                task_id = self._active_task_id or 'Global'
-                self.logger.log("Recursos do MediaPipe liberados", "DEBUG", task_id)
-            except Exception as e:
-                self.logger.log(f"Erro ao liberar recursos do MediaPipe: {e}", "WARNING", self._active_task_id)
 
     def _init_model(self, task_id):
         try:
@@ -351,191 +196,81 @@ class VisualAnalyzer:
             self.logger.log("Módulo 'mediapipe' não encontrado! Instale com 'pip install mediapipe'", "CRITICAL", task_id)
             raise
         self.logger.log("Inicializando modelo MediaPipe Pose...", "INFO", task_id)
-        # guardamos o módulo mp apenas; a instância do Pose será usada como context manager
-            
-        self._mp = mp
-    
-        def analyze_video_in_single_pass(self, video_path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Dict]:
-            """
-            Percorre o vídeo em passos (aprox. visual_analysis_fps) e retorna uma lista com
-            dados de timestamp + flags (looking_away, gesturing). Implementação simples, com
-            proteção contra falhas de bibliotecas nativas.
-            """
-            try:
-                import cv2
-            except ImportError:
-                self.logger.log("'opencv-python' não encontrado! Instale com 'pip install opencv-python'", "CRITICAL", task_id)
-                return []
-    
-            # (re)inicializa o mp se necessário
-            if not hasattr(self, "_mp") or self._mp is None:
-                try:
-                    self._init_model(task_id)
-                except Exception as e:
-                    self.logger.log(f"Falha ao inicializar MediaPipe: {e}", "CRITICAL", task_id, exc_info=True)
-                    return []
-    
-            mp = self._mp
-    
-            cap = None
-            results = []
-            try:
-                self.logger.log(f"Tentando abrir o vídeo para análise visual: {video_path}", "DEBUG", task_id)
-                cap = cv2.VideoCapture(video_path)
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
-    
-                if fps <= 0 or total_frames <= 0:
-                    self.logger.log(f"Vídeo inválido para análise visual: {total_frames} frames, {fps:.2f} FPS.", "ERROR", task_id)
-                    return []
-    
-                target_fps = max(1, int(self.config.get("visual_analysis_fps", 5)))
-                process_every = max(1, int(max(1, fps) / target_fps))
-                self.logger.log(f"Análise visual iniciada. Vídeo: {total_frames} frames @ {fps:.2f} FPS. Processando a cada {process_every} frames para atingir ~{target_fps} FPS.", "INFO", task_id)
-    
-                # usamos context manager para garantir liberação de recursos do MediaPipe
-                with mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5, model_complexity=1) as pose:
-                    for frame_idx in range(0, total_frames, process_every):
-                        if stop_event.is_set():
-                            self.logger.log("Análise visual interrompida pelo usuário.", "WARNING", task_id)
-                            break
-    
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                        ret, frame = cap.read()
-                        if not ret:
-                            self.logger.log(f"Falha ao ler frame {frame_idx}. Encerrando análise visual.", "WARNING", task_id)
-                            break
-    
-                        # enviar progresso para UI
-                        try:
-                            # Pipeline: Extração (0-5%) -> Transcrição (5-15%) -> Visual (15-20%) -> Conteúdo (20-25%) -> Render (25-99%)
-                            progress = 15 + (frame_idx / max(1, total_frames)) * 5
-                            pq.put({'type': 'progress', 'stage': 'Análise Visual', 'percentage': progress, 'task_id': task_id})
-                        except Exception:
-                            # não crítico, apenas continue
-                            pass
-    
-                        try:
-                            # MediaPipe espera imagens RGB
-                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            pm_res = pose.process(rgb)
-                        except Exception as e:
-                            # captura erros provenientes de bindings nativos (pelo menos logamos e continuamos)
-                            self.logger.log(f"Erro ao processar frame {frame_idx} com MediaPipe: {e}", "ERROR", task_id, exc_info=True)
-                            # para segurança, adicionamos um ponto padrão e continuamos
-                            results.append({"timestamp": (frame_idx / fps), "looking_away": False, "gesturing": False})
-                            continue
-    
-                        # A lógica real de detecção deve ser implementada aqui.
-                        # Por ora, mantemos valores padrão (mas extraímos landmarkes se disponíveis).
-                        looking_away = False
-                        gesturing = False
-                        if pm_res.pose_landmarks:
-                            # Exemplo simples: se nariz deslocado muito para a esquerda/direita, considerar olhar para fora
-                            try:
-                                lm = pm_res.pose_landmarks.landmark
-                                # índice 0: nariz no model do MediaPipe Pose
-                                nose = lm[0]
-                                # yaw simplificado (x perto de 0.5 centro): ajustamos thresholds a partir da config
-                                if nose.x < 0.2 or nose.x > 0.8:
-                                    looking_away = True
-                            except Exception:
-                                pass
-    
-                        results.append({"timestamp": (frame_idx / fps), "looking_away": looking_away, "gesturing": gesturing})
-    
-            except Exception as e:
-                # captura qualquer erro inesperado e loga; retornamos o que foi coletado até então
-                self.logger.log(f"Erro FATAL na análise visual: {e}", "CRITICAL", task_id, exc_info=True)
-            finally:
-                if cap is not None:
-                    try:
-                        cap.release()
-                    except Exception:
-                        pass
-    
-            self.logger.log(f"Análise visual concluída. {len(results)} pontos de dados gerados.", "SUCCESS", task_id)
-            return results
+        self.pose_model = mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5, model_complexity=1)
+
+    def analyze_video_in_single_pass(self, video_path: str, pq: queue.Queue, task_id: str, stop_event: threading.Event) -> List[Dict]:
+        try:
+            import cv2
+        except ImportError:
+            self.logger.log("'opencv-python' não encontrado! Instale com 'pip install opencv-python'", "CRITICAL", task_id)
+            return []
+
+        if self.pose_model is None:
+            self._init_model(task_id)
+
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        if fps <= 0 or total_frames <= 0:
+            self.logger.log(f"Vídeo inválido ou corrompido: {total_frames} frames, {fps:.2f} FPS.", "ERROR", task_id)
+            cap.release()
+            return []
+
+        target_fps = self.config.get("visual_analysis_fps")
+        process_every = max(1, int(fps / target_fps))
+        self.logger.log(f"Análise visual iniciada. Vídeo: {total_frames} frames @ {fps:.2f} FPS. Processando a cada {process_every} frames para atingir ~{target_fps} FPS.", "INFO", task_id)
+
+        results = []
+        for frame_idx in range(0, total_frames, process_every):
+            if stop_event.is_set():
+                self.logger.log("Análise visual interrompida.", "WARNING", task_id)
+                break
+
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret: break
+
+            pq.put({'type': 'progress', 'stage': 'Análise Visual', 'percentage': 51 + (frame_idx / total_frames) * 24, 'task_id': task_id})
+            results.append({"timestamp": (frame_idx / fps), "looking_away": False, "gesturing": False})
+
+        cap.release()
+        self.logger.log(f"Análise visual (placeholder) concluída. {len(results)} pontos de dados gerados.", "SUCCESS", task_id)
+        return results
 
 class ContentAnalyzer:
     """Analisa a transcrição e os dados visuais para criar segmentos de fala."""
     def __init__(self, logger: Logger, config: Config):
         self.logger = logger
         self.config = config
-        self._active_task_id = None
 
-    def cleanup(self) -> None:
-        """Limpa quaisquer recursos temporários."""
-        pass  # Por ora não há recursos para limpar
-
-    def create_speech_segments(self, words, pq, use_visual: bool, visual_data: List[Dict], task_id: str, stop_event: threading.Event) -> List[Dict]:
-        """
-        Cria segmentos de fala a partir das palavras transcritas e dados visuais opcionais.
-        
-        Args:
-            words: Lista de palavras transcritas (cada palavra deve ter start, end e word)
-            pq: Queue para progresso
-            use_visual: Se True, usa dados visuais na análise
-            visual_data: Lista de dados visuais com timestamps
-            task_id: ID da tarefa
-            stop_event: Evento para interrupção
-            
-        Returns:
-            Lista de segmentos de fala
-        """
-        # Validação robusta de entrada
+    def create_speech_segments(self, words, pq, use_visual, visual_data, task_id, stop_event):
         if not words:
             self.logger.log("Nenhuma palavra fornecida para análise de conteúdo.", "WARNING", task_id)
             return []
 
-        # Garante que visual_data seja uma lista mesmo quando desabilitado
-        if visual_data is None:
-            visual_data = []
-            self.logger.log("visual_data é None, usando lista vazia", "WARNING", task_id)
-            
-        # Validação de tipos
-        if not isinstance(words, list) or not all(hasattr(w, 'start') and hasattr(w, 'end') and hasattr(w, 'word') for w in words):
-            self.logger.log("Formato inválido de palavras fornecidas", "ERROR", task_id)
-            return []
-            
         self.logger.log(f"Analisando {len(words)} palavras para criar segmentos de corte...", "INFO", task_id)
-        
+
         segs, start, n = [], words[0].start, len(words)
         fillers = self.config.get('filler_words', [])
         ctx_pause = self.config.get('filler_word_context_pause')
-        
+
         for i in range(n - 1):
             if stop_event.is_set(): return []
-            
-            pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': 20 + (i / n) * 5, 'task_id': task_id})
-            
+
+            if i % 100 == 0:
+                pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': 76 + (i / n) * 20, 'task_id': task_id})
+
             cur, nxt = words[i], words[i+1]
             pause = nxt.start - cur.end
             score = 0
             cut_reason = None
-            
-            # Pontuação baseada em pausas
+
             if pause >= self.config.get('pause_threshold_s'):
                 score += self.config.get('scores')['pause_long'] if pause > 0.8 else self.config.get('scores')['pause_medium']
                 if score <= self.config.get('cut_threshold'):
                     cut_reason = f"pausa longa ({pause:.2f}s)"
-            
-            # TODO: Implementar análise visual aqui
-            # Se os dados visuais estiverem disponíveis e habilitados, usar para ajustar a pontuação
-            if use_visual and visual_data:
-                # Encontrar dados visuais próximos ao timestamp atual
-                current_time = cur.end
-                visual_score = 0
-                
-                # TODO: Implementar lógica de pontuação visual
-                # Exemplo de estrutura:
-                # - Procurar por mudanças significativas no olhar/gestos próximo ao timestamp
-                # - Adicionar pontos se houver indicadores visuais de pausa natural
-                # - Considerar expressões corporais que indicam fim de pensamento
-                # Por enquanto, apenas logamos que temos dados visuais disponíveis
-                self.logger.log(f"Dados visuais disponíveis para t={current_time:.2f}s", "DEBUG", task_id, to_ui=False)
-            
-            # Análise de palavras de preenchimento
+
             is_filler = cur.word.strip('.,?!- ').lower() in fillers
             if is_filler and (pause > ctx_pause or (i > 0 and cur.start - words[i-1].end > ctx_pause)):
                 cut_reason = f"palavra de preenchimento ('{cur.word.strip()}')"
@@ -544,7 +279,7 @@ class ContentAnalyzer:
                 self.logger.log(f"Corte em {cur.end:.2f}s. Motivo: {cut_reason}.", "DEBUG", task_id, to_ui=False)
                 self._add_seg(segs, start, cur.end)
                 start = nxt.start
-                
+
         self._add_seg(segs, start, words[-1].end)
         self.logger.log(f"Análise de conteúdo finalizada. {len(segs)} segmentos de fala mantidos.", "SUCCESS", task_id)
         return segs
@@ -554,24 +289,98 @@ class ContentAnalyzer:
             segs.append({'start': start, 'end': end})
 
 class ScriptComposer:
-    """Gera e salva o arquivo de roteiro em formato JSON."""
+    """Gera e salva o arquivo de roteiro em formato JSON padronizado."""
     def __init__(self, logger: Logger):
         self.logger = logger
-        self._active_task_id = None
-        
-    def cleanup(self) -> None:
-        """Nenhum recurso para limpar por ora."""
-        pass
 
-    def generate_and_save_json(self, segments, video_path, task_id):
-        data = {"segments": [{"start_time": f"{s['start']:.3f}", "end_time": f"{s['end']:.3f}"} for s in segments]}
+    def generate_and_save_json(self, segments: List[Dict[str, float]], video_path: str, task_id: str) -> Optional[str]:
+        data = { "segments": [{"start": round(s['start'], 3), "end": round(s['end'], 3)} for s in segments] }
         out_path = os.path.splitext(video_path)[0] + ".json"
-        
+
         try:
             with open(out_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
-            self.logger.log(f"Roteiro com {len(segments)} segmentos salvo em '{out_path}'", "SUCCESS", task_id)
+            self.logger.log(f"Roteiro com {len(segments)} segmentos salvo em '{os.path.basename(out_path)}'", "SUCCESS", task_id)
             return out_path
         except IOError as e:
             self.logger.log(f"ERRO ao salvar roteiro JSON em '{out_path}': {e}", "ERROR", task_id)
             return None
+
+class SubtitleGenerator:
+    """
+    Gera um arquivo de legenda .srt sincronizado com o vídeo editado final.
+    """
+    def __init__(self, logger: Logger):
+        self.logger = logger
+        self.Word = dataclasses.make_dataclass('Word', ['start', 'end', 'word'])
+
+    def _seconds_to_srt_time(self, seconds: float) -> str:
+        """Converte segundos para o formato de tempo SRT (HH:MM:SS,ms)."""
+        millis = int((seconds - int(seconds)) * 1000)
+        td = timedelta(seconds=int(seconds))
+        return f"{td},{millis:03d}"
+
+    def _remap_words_to_new_timeline(self, words: List[Any], segments: List[Dict[str, float]]) -> List[Any]:
+        """
+        Mapeia os tempos das palavras originais para a nova linha do tempo do vídeo
+        editado, subtraindo a duração de todos os trechos cortados.
+        """
+        remapped_words = []
+        time_removed_before_current_segment = 0.0
+        last_segment_end = 0.0
+
+        for segment in segments:
+            time_removed_before_current_segment += (segment['start'] - last_segment_end)
+            
+            for word in words:
+                if segment['start'] <= word.start < segment['end']:
+                    new_start = word.start - time_removed_before_current_segment
+                    new_end = word.end - time_removed_before_current_segment
+                    remapped_words.append(self.Word(start=new_start, end=new_end, word=word.word))
+            
+            last_segment_end = segment['end']
+            
+        return remapped_words
+
+    def generate_srt(self, words: List[Any], segments: List[Dict[str, float]], output_path: str, task_id: str):
+        self.logger.log("Iniciando geração de legenda .srt sincronizada...", "INFO", task_id)
+        if not words or not segments:
+            self.logger.log("Dados de palavras ou segmentos insuficientes para gerar legenda.", "WARNING", task_id)
+            return
+
+        remapped_words = self._remap_words_to_new_timeline(words, segments)
+        if not remapped_words:
+            self.logger.log("Nenhuma palavra encontrada nos segmentos mantidos. Abortando geração de legenda.", "WARNING", task_id)
+            return
+
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                subtitle_index = 1
+                current_line = ""
+                line_start_time = remapped_words[0].start
+
+                for i, word in enumerate(remapped_words):
+                    next_word_start = remapped_words[i+1].start if i + 1 < len(remapped_words) else word.end + 5
+                    
+                    current_line += word.word + " "
+                    
+                    if len(current_line) > 42 or (next_word_start - word.end > 1.0) or (word.end - line_start_time > 5.0):
+                        f.write(f"{subtitle_index}\n")
+                        f.write(f"{self._seconds_to_srt_time(line_start_time)} --> {self._seconds_to_srt_time(word.end)}\n")
+                        f.write(f"{current_line.strip()}\n\n")
+                        
+                        subtitle_index += 1
+                        current_line = ""
+                        if i + 1 < len(remapped_words):
+                            line_start_time = remapped_words[i+1].start
+                
+                if current_line.strip():
+                    f.write(f"{subtitle_index}\n")
+                    f.write(f"{self._seconds_to_srt_time(line_start_time)} --> {self._seconds_to_srt_time(remapped_words[-1].end)}\n")
+                    f.write(f"{current_line.strip()}\n\n")
+
+            self.logger.log(f"Legenda .srt sincronizada salva com sucesso em '{os.path.basename(output_path)}'.", "SUCCESS", task_id)
+        except IOError as e:
+            self.logger.log(f"Erro ao escrever arquivo de legenda .srt: {e}", "ERROR", task_id)
+        except Exception as e:
+            self.logger.log(f"Erro inesperado na geração da legenda: {e}", "CRITICAL", task_id, exc_info=True)
