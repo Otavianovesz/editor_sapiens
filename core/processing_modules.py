@@ -196,56 +196,79 @@ class ContentAnalyzer:
         self.logger = logger
         self.config = config
 
-    def create_speech_segments(self, words: List[Any], pq: queue.Queue, task_id: str, stop_event: threading.Event) -> Tuple[List[Dict[str, float]], List[Dict[str, float]]]:
-        if not words: self.logger.log("Nenhuma palavra para análise.", "WARNING", task_id); return [], []
-        self.logger.log(f"Analisando {len(words)} palavras para criar segmentos...", "INFO", task_id)
+    def create_speech_segments(self, words: List[Any], pq: queue.Queue, task_config: Dict, task_id: str, stop_event: threading.Event) -> List[Dict[str, float]]:
+        # A assinatura foi corrigida para aceitar todos os argumentos enviados pelo Orchestrator.
+        # A lógica interna foi levemente ajustada para usar 'task_config' em vez de 'self.config'
+        # para configurações que podem variar por tarefa.
 
-        padded_segs, exact_segs = [], []
+        if not words:
+            self.logger.warning(f"[{task_id}] Nenhuma palavra para análise. Retornando segmentos vazios.")
+            return []
+        self.logger.info(f"[{task_id}] Analisando {len(words)} palavras para criar segmentos de fala...")
+
+        # Parâmetros de configuração
+        pause_threshold = self.config.get('pause_threshold_s', 0.5)
+        fillers = self.config.get('filler_words', [])
+        ctx_pause = self.config.get('filler_word_context_pause', 0.25)
+        min_segment_duration = self.config.get('min_segment_duration_s', 0.2)
         padding_start = self.config.get("segment_padding_start_s", 0.1)
         padding_end = self.config.get("segment_padding_end_s", 0.1)
-        
-        exact_start_time = words[0].start
-        padded_start_time = max(0, exact_start_time - padding_start)
-        
-        n = len(words)
-        
-        for i in range(n - 1):
-            if stop_event.is_set(): return [], []
-            if i % 100 == 0: pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': 76 + (i / n) * 20, 'task_id': task_id})
 
-            cur, nxt = words[i], words[i+1]
+        segments = []
+        if not words:
+            return segments
+
+        current_start = max(0, words[0].start - padding_start)
+
+        for i in range(len(words) - 1):
+            if stop_event.is_set():
+                self.logger.warning(f"[{task_id}] Análise de conteúdo interrompida.")
+                return []
+            
+            # Atualiza o progresso na UI
+            if i % 100 == 0:
+                percentage = 76 + (i / len(words)) * 20
+                pq.put({'type': 'progress', 'stage': 'Analisando Conteúdo', 'percentage': percentage, 'task_id': task_id})
+
+            cur = words[i]
+            nxt = words[i + 1]
             pause = nxt.start - cur.end
             cut_reason = None
 
-            if pause >= self.config.get('pause_threshold_s'):
-                score = self.config.get('scores')['pause_long'] if pause > 0.8 else self.config.get('scores')['pause_medium']
-                if score <= self.config.get('cut_threshold'): cut_reason = f"pausa longa ({pause:.2f}s)"
-            
-            is_filler = cur.word.strip('.,?!- ').lower() in self.config.get('filler_words', [])
-            if is_filler and (pause > self.config.get('filler_word_context_pause') or (i > 0 and cur.start - words[i-1].end > self.config.get('filler_word_context_pause'))):
+            # Lógica de corte por pausa
+            if pause >= pause_threshold:
+                cut_reason = f"pausa de {pause:.2f}s"
+
+            # Lógica de corte por palavra de preenchimento (filler word)
+            is_filler = cur.word.strip('.,?!- ').lower() in fillers
+            if is_filler and (pause > ctx_pause or (i > 0 and cur.start - words[i-1].end > ctx_pause)):
                 cut_reason = f"palavra de preenchimento ('{cur.word.strip()}')"
-
+            
             if cut_reason:
-                exact_end_time = cur.end
-                padded_end_time = cur.end + padding_end
-                next_padded_start_time = nxt.start - padding_start
+                # self.logger.debug(f"[{task_id}] Corte em {cur.end:.2f}s devido a: {cut_reason}")
                 
-                if padded_end_time > next_padded_start_time:
+                # Finaliza o segmento atual com margem de segurança
+                segment_end = cur.end + padding_end
+                
+                # Garante que as margens não se sobreponham
+                next_segment_start_candidate = nxt.start - padding_start
+                if segment_end > next_segment_start_candidate:
                     midpoint = cur.end + pause / 2
-                    padded_end_time = midpoint
-                    next_padded_start_time = midpoint
-
-                self._add_seg(padded_segs, padded_start_time, padded_end_time)
-                self._add_seg(exact_segs, exact_start_time, exact_end_time)
+                    segment_end = midpoint
+                    next_segment_start_candidate = midpoint
                 
-                padded_start_time = next_padded_start_time
-                exact_start_time = nxt.start
-        
-        self._add_seg(padded_segs, padded_start_time, words[-1].end + padding_end)
-        self._add_seg(exact_segs, exact_start_time, words[-1].end)
-        
-        self.logger.log(f"Análise finalizada. {len(padded_segs)} segmentos mantidos.", "SUCCESS", task_id)
-        return padded_segs, exact_segs
+                if (segment_end - current_start) >= min_segment_duration:
+                    segments.append({'start': current_start, 'end': segment_end})
+                
+                current_start = next_segment_start_candidate
+
+        # Adiciona o último segmento
+        final_end_time = words[-1].end + padding_end
+        if (final_end_time - current_start) >= min_segment_duration:
+            segments.append({'start': current_start, 'end': final_end_time})
+
+        self.logger.info(f"[{task_id}] Análise finalizada. {len(segments)} segmentos mantidos.")
+        return segments
 
     def _add_seg(self, segs: List[Dict[str, float]], start: float, end: float):
         start = max(0, start)

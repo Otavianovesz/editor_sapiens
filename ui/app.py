@@ -18,6 +18,8 @@ from utils.logger import Logger
 from utils.constants import *
 from .presets_window import PresetsManager
 from .settings_window import AdvancedSettings
+from core.processing_modules import AudioTranscriber, ContentAnalyzer, ScriptComposer, VisualAnalyzer, SubtitleParser, MediaProcessor
+
 
 # Fallback para CTkToolTip para garantir compatibilidade com versões antigas de CTk
 if not hasattr(ctk, "CTkToolTip"):
@@ -42,10 +44,6 @@ if not hasattr(ctk, "CTkToolTip"):
     ctk.CTkToolTip = _DummyToolTip
 
 class App(ctk.CTk):
-    """
-    Classe principal da aplicação, responsável por toda a interface gráfica (GUI),
-    gerenciamento de estado e coordenação das ações do usuário com o backend.
-    """
     def __init__(self):
         super().__init__()
         self.title("Editor Sapiens (Arconte)")
@@ -58,7 +56,29 @@ class App(ctk.CTk):
         self.db = DatabaseManager()
         self.logger = Logger(self.log_queue, self.db)
         self.config = Config()
-        self.orchestrator = Orchestrator(self.logger, self.config)
+
+        # Instanciação dos módulos
+        audio_transcriber = AudioTranscriber(self.logger, self.config)
+        content_analyzer = ContentAnalyzer(self.logger, self.config)
+        script_composer = ScriptComposer(self.logger)
+        visual_analyzer = VisualAnalyzer(self.logger, self.config)
+        subtitle_parser = SubtitleParser(self.logger)
+        media_processor = MediaProcessor(self.logger)
+
+        # Dicionário de módulos
+        modules = {
+            'transcriber': audio_transcriber,
+            'content': content_analyzer,
+            'composer': script_composer,
+            'visual': visual_analyzer,
+            'parser': subtitle_parser,
+            'media_processor': media_processor,
+        }
+
+        # --- CORREÇÃO APLICADA AQUI ---
+        # O logger (self.logger) agora é passado como o primeiro argumento,
+        # seguido pelo config e pelos módulos.
+        self.orchestrator = Orchestrator(self.logger, self.config, modules)
 
         self.is_running_task = False
         self.stop_event = threading.Event()
