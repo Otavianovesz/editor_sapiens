@@ -1,138 +1,72 @@
-# -*- coding: utf-8 -*-
+# core/orchestrator.py
 
 import os
-import json
-import logging
-import queue
-import threading
-from typing import Optional, Dict, Any
-
-from .config import Config
-from .renderer import VideoRenderer
-from .processing_modules import (
-    MediaProcessor,
-    AudioTranscriber,
-    VisualAnalyzer,
-    ContentAnalyzer,
-    ScriptComposer,
-    SubtitleParser,
-    SubtitleGenerator
-)
-from utils.logger import Logger
+import traceback
+import logging # Import necessário para as constantes de nível
+from typing import Dict
+from .subtitles import TimelineRemapper, SubtitleGenerator
 
 class Orchestrator:
-    """
-    Coordena a execução das tarefas do pipeline, gerenciando os módulos
-    e o fluxo de dados para garantir a estabilidade e a precisão dos resultados.
-    """
-    def __init__(self, logger: Logger, config: Config):
-        self.logger = logger
+    def __init__(self, config, modules):
+        self._modules = modules
         self.config = config
-        self.current_renderer: Optional[VideoRenderer] = None
-        # O Transcritor é mantido como uma instância persistente para estabilidade.
-        self.transcriber = AudioTranscriber(logger, config)
+        self.logger = config.logger
 
-    def interrupt_current_task(self):
-        """Interrompe a tarefa de renderização em andamento."""
-        if self.current_renderer:
-            self.current_renderer.interrupt()
+    def _get_module(self, name: str):
+        return self._modules.get(name)
 
-    def _get_module(self, name: str) -> Any:
-        """Fábrica para instanciar módulos de processamento sob demanda."""
-        if name == 'transcriber':
-            return self.transcriber
-        # Módulos 'stateless' são criados a cada chamada para garantir a limpeza.
-        if name == 'media': return MediaProcessor(self.logger)
-        if name == 'visual': return VisualAnalyzer(self.logger, self.config)
-        if name == 'content': return ContentAnalyzer(self.logger, self.config)
-        if name == 'composer': return ScriptComposer(self.logger)
-        if name == 'subtitle_parser': return SubtitleParser(self.logger)
-        if name == 'subtitle_generator': return SubtitleGenerator(self.logger)
-        raise ValueError(f"Módulo desconhecido solicitado: {name}")
-
-    def run_sapiens_task(self, pq: queue.Queue, task_config: Dict[str, Any], stop_event: threading.Event):
-        """
-        Executa o pipeline de análise, gerando um roteiro de vídeo (com margens)
-        e uma legenda sincronizada (com tempos exatos).
-        """
+    def run_sapiens_task(self, pq, task_config: Dict, stop_event):
         task_id = task_config['id']
         video_path = task_config['video_path']
-        self.logger.log(f"Iniciando pipeline 'Sapiens' para '{os.path.basename(video_path)}'.", "INFO", task_id)
-
+        
         try:
-            words = []
-            # --- Etapa 1: Obtenção da Transcrição ---
-            if task_config.get('transcription_mode') == 'whisper':
-                audio_path = self._get_module('media').extract_audio(video_path, task_id)
-                if not audio_path: raise RuntimeError("Extração de áudio falhou.")
-                if stop_event.is_set(): raise InterruptedError("Tarefa interrompida.")
-                try:
-                    words = self._get_module('transcriber').transcribe(audio_path, pq, task_id, stop_event)
-                finally:
-                    self._get_module('media').cleanup(audio_path, task_id)
-                    self._get_module('transcriber').release_gpu_memory()
+            # --- CHAMADA DE LOG CORRIGIDA ---
+            self.logger.info(f"[{task_id}] Iniciando processo Sapiens...")
+
+            # ETAPA 1: Transcrição
+            transcriber = self._get_module('transcriber')
+            if task_config.get('transcription_mode') == 'file' and os.path.exists(task_config.get('transcription_path', '')):
+                self.logger.info(f"[{task_id}] Carregando transcrição do arquivo: {os.path.basename(task_config['transcription_path'])}")
+                words = transcriber.load_srt_as_words(task_config['transcription_path'], task_id)
             else:
-                file_path = task_config.get('transcription_path', '')
-                if not file_path or not os.path.exists(file_path): raise FileNotFoundError(f"Arquivo de transcrição não encontrado: {file_path}")
-                self.logger.log(f"Carregando transcrição de: {os.path.basename(file_path)}", "INFO", task_id)
-                _, extension = os.path.splitext(file_path.lower())
-                if extension == '.json':
-                    with open(file_path, 'r', encoding='utf-8') as f: words = json.load(f)
-                elif extension in ['.srt', '.vtt']:
-                    words = self._get_module('subtitle_parser').parse(file_path, task_id)
-                else: raise ValueError(f"Formato de arquivo de transcrição não suportado: {extension}")
-
-            # --- Etapa 2: Análise de Conteúdo (Dupla Precisão) ---
-            if stop_event.is_set(): raise InterruptedError("Tarefa interrompida.")
-            if not words: raise RuntimeError("Transcrição não produziu resultados.")
-
-            # O ContentAnalyzer agora retorna duas listas: uma para o vídeo, outra para a legenda.
-            padded_segments, exact_segments = self._get_module('content').create_speech_segments(words, pq, task_id, stop_event)
+                self.logger.info(f"[{task_id}] Iniciando extração de áudio e transcrição...")
+                audio_path = transcriber.extract_audio(video_path, task_id, stop_event)
+                words = transcriber.transcribe_audio(audio_path, task_id, stop_event)
             
-            if stop_event.is_set(): raise InterruptedError("Tarefa interrompida.")
-            if not padded_segments: raise RuntimeError("Análise de conteúdo não produziu segmentos válidos.")
-
-            # --- Etapa 3: Geração dos Artefatos Finais ---
+            if stop_event.is_set() or not words: raise InterruptedError("Falha na transcrição.")
+            self.logger.info(f"[{task_id}] Transcrição concluída.") # SUCCESS é um nível customizado, INFO é mais padrão.
             
-            # Usa os segmentos com PADDING para criar o roteiro do VÍDEO (cortes suaves)
-            script_path = self._get_module('composer').generate_and_save_json(padded_segments, video_path, task_id)
-            if not script_path: raise RuntimeError("Falha ao salvar o roteiro JSON.")
+            # ETAPA 2: Análise de Conteúdo
+            segments = self._get_module('content').create_speech_segments(words, pq, task_config, task_id, stop_event)
+            if stop_event.is_set() or not segments: raise InterruptedError("Falha na análise de conteúdo.")
+            self.logger.info(f"[{task_id}] Análise de conteúdo e definição de cortes concluída.")
+            
+            # ETAPA 3: Mapeamento da Linha do Tempo
+            self.logger.info(f"[{task_id}] Criando mapa da nova linha do tempo...")
+            remapper = TimelineRemapper(segments)
 
-            # Usa os segmentos EXATOS para criar a LEGENDA (sincronização perfeita)
-            try:
-                subtitle_path = os.path.splitext(video_path)[0] + "_editado.srt"
-                self._get_module('subtitle_generator').generate_srt(words, exact_segments, subtitle_path, task_id)
-            except Exception as srt_e:
-                self.logger.log(f"Não foi possível gerar a legenda .srt. Erro: {srt_e}", "WARNING", task_id)
+            # ETAPA 4: Geração do Roteiro para o Renderizador
+            composer = self._get_module('composer')
+            script_path = composer.generate_and_save_json(segments, video_path, task_id)
+            if not script_path: raise RuntimeError("Falha ao salvar o roteiro de edição.")
+            self.logger.info(f"[{task_id}] Roteiro de edição salvo em '{os.path.basename(script_path)}'.")
 
+            # ETAPA 5: Geração das Legendas Sincronizadas
+            self.logger.info(f"[{task_id}] Gerando legendas sincronizadas para o vídeo editado...")
+            subtitle_generator = SubtitleGenerator(remapper, self.logger, task_id)
+            srt_path = subtitle_generator.generate_srt(words, video_path)
+            
+            if srt_path:
+                self.logger.info(f"[{task_id}] Legendas sincronizadas salvas em '{os.path.basename(srt_path)}'")
+            else:
+                self.logger.warning(f"[{task_id}] Não foi possível gerar o arquivo de legendas.")
+
+            # ETAPA 6: Notificação para a UI
             pq.put({'type': 'sapiens_done', 'script_path': script_path, 'task_id': task_id})
 
-        except InterruptedError:
-            self.logger.log("Pipeline Sapiens interrompido pelo usuário.", "WARNING", task_id)
-            pq.put({'type': 'interrupted', 'task_id': task_id})
+        except InterruptedError as e:
+            self.logger.warning(f"[{task_id}] Processo interrompido pelo usuário ou por uma falha: {e}")
+            pq.put({'type': 'task_failed', 'task_id': task_id, 'reason': str(e)})
         except Exception as e:
-            logging.error(f"ERRO no pipeline Sapiens: {e}", exc_info=True)
-            pq.put({'type': 'error', 'message': str(e), 'task_id': task_id})
-
-    def run_render_task(self, pq: queue.Queue, task_config: Dict[str, Any], stop_event: threading.Event):
-        """Executa apenas a tarefa de renderização de vídeo a partir de um roteiro."""
-        task_id = task_config['id']
-        output_path = os.path.splitext(task_config['video_path'])[0] + "_editado.mp4"
-
-        try:
-            renderer = VideoRenderer(
-                source_path=task_config['video_path'],
-                json_path=task_config.get('render_script_path', ''),
-                output_path=output_path,
-                preset=self.config.get("render_preset"),
-                logger=self.logger,
-                pq=pq,
-                task_id=task_id
-            )
-            self.current_renderer = renderer
-            renderer.run(stop_event)
-        except Exception as e:
-            logging.error(f"ERRO ao iniciar a tarefa de renderização: {e}", exc_info=True)
-            pq.put({'type': 'error', 'message': f"Falha na inicialização da renderização: {e}", 'task_id': task_id})
-        finally:
-            self.current_renderer = None
+            self.logger.critical(f"[{task_id}] Erro inesperado no orchestrator: {e}\n{traceback.format_exc()}")
+            pq.put({'type': 'task_failed', 'task_id': task_id, 'reason': str(e)})
