@@ -8,6 +8,8 @@
     "min_segment_duration_s": 0.2,
     "cut_threshold": -7.0,
     "filler_word_context_pause": 0.25,
+    "segment_padding_start_s": 0.1,
+    "segment_padding_end_s": 0.1,
     "scores": {
         "pause_long": -10,
         "pause_medium": -7,
@@ -53,5 +55,5 @@
     "gesture_sensitivity_velocity": 0.1,
     "gaze_sensitivity_yaw": 0.8,
     "gaze_sensitivity_pitch": 0.7,
-    "render_preset": "medium"
+    "render_preset": "superfast"
 }
