@@ -13,20 +13,29 @@ from types import FrameType
 from typing import Union, Type, Optional
 
 class LoggerAdapter(logging.LoggerAdapter):
-    """Adapter para garantir que task_id esteja sempre presente"""
+    """Adapter to ensure that task_id is always present in the log."""
     def process(self, msg, kwargs):
+        """Processes the log message and keyword arguments.
+
+        Args:
+            msg (str): The log message.
+            kwargs (dict): The keyword arguments.
+
+        Returns:
+            tuple: A tuple containing the processed log message and keyword arguments.
+        """
         kwargs.setdefault('extra', {}).setdefault('task_id', 'Global')
         return msg, kwargs
 
 def setup_logging() -> None:
-    """Configura o logger global com rotação de arquivos e níveis adequados."""
+    """Configures the global logger with file rotation and appropriate levels."""
     try:
         log_formatter = logging.Formatter(
             '%(asctime)s [%(levelname)s] - %(threadName)s: [%(task_id)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        # Configuração do arquivo de log com rotação
+        # Log file configuration with rotation
         from logging.handlers import RotatingFileHandler
         log_file_handler = RotatingFileHandler(
             'sapiens.log',
@@ -37,60 +46,60 @@ def setup_logging() -> None:
         )
         log_file_handler.setFormatter(log_formatter)
         
-        # Configuração do logger raiz
+        # Root logger configuration
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
         
-        # Limpa handlers existentes
+        # Clears existing handlers
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
             
         root_logger.addHandler(log_file_handler)
         
-        # Configura o adapter global
+        # Configures the global adapter
         global logger
         logger = LoggerAdapter(root_logger, {'task_id': 'Global'})
         
-        logger.info("================ INICIANDO APLICAÇÃO ================")
+        logger.info("================ STARTING APPLICATION ================")
     except Exception as e:
-        print(f"ERRO CRÍTICO: Falha ao configurar logging: {e}", file=sys.stderr)
+        print(f"CRITICAL ERROR: Failed to configure logging: {e}", file=sys.stderr)
         raise
 
 def cleanup_threads() -> None:
-    """Realiza limpeza sistemática de recursos do sistema."""
+    """Performs a systematic cleanup of system resources."""
     def safe_thread_stop(thread: threading.Thread) -> None:
         try:
             if hasattr(thread, '_stop'):
                 thread._stop()
         except Exception as e:
-            logger.warning(f"Falha ao interromper thread {thread.name}: {e}")
+            logger.warning(f"Failed to stop thread {thread.name}: {e}")
 
     try:
-        # 1. Coleta de lixo forçada
+        # 1. Forced garbage collection
         gc.collect()
         
-        # 2. Limpeza de progressbar
+        # 2. Progressbar cleanup
         try:
             from tqdm import tqdm
             tqdm._instances.clear()
         except Exception as e:
-            logger.debug(f"Ignorando erro na limpeza tqdm: {e}")
+            logger.debug(f"Ignoring error in tqdm cleanup: {e}")
 
-        # 3. Interrupção controlada de threads
+        # 3. Controlled thread interruption
         current = threading.current_thread()
         for thread in threading.enumerate():
             if thread is not current and not thread.daemon:
                 safe_thread_stop(thread)
                 
     except Exception as e:
-        logger.error(f"Erro durante cleanup: {e}", exc_info=True)
+        logger.error(f"Error during cleanup: {e}", exc_info=True)
 
 def setup_thread_excepthook() -> None:
-    """Configura handler global para exceções não tratadas em threads."""
+    """Sets up a global handler for unhandled exceptions in threads."""
     
     def custom_thread_excepthook(args: threading.ExceptHookArgs) -> None:
         error_msg = (
-            f"Erro não tratado em thread {args.thread.name}: "
+            f"Unhandled error in thread {args.thread.name}: "
             f"{args.exc_type.__name__}: {args.exc_value}"
         )
         
@@ -99,7 +108,7 @@ def setup_thread_excepthook() -> None:
                         extra={'task_id': 'Global'})
         
         if isinstance(args.exc_value, (SystemExit, KeyboardInterrupt)):
-            logger.info("Encerrando aplicação por sinal de interrupção",
+            logger.info("Closing application due to interruption signal",
                         extra={'task_id': 'Global'})
             cleanup_threads()
             os._exit(1)
@@ -107,20 +116,29 @@ def setup_thread_excepthook() -> None:
     threading.excepthook = custom_thread_excepthook
 
 def signal_handler(signum: int, frame: Optional[FrameType]) -> NoReturn:
-    """Handler unificado para sinais do sistema."""
-    logger.info(f"Sinal recebido: {signum}", extra={'task_id': 'Global'})
+    """Unified handler for system signals.
+
+    Args:
+        signum (int): The signal number.
+        frame (Optional[FrameType]): The current stack frame.
+    """
+    logger.info(f"Signal received: {signum}", extra={'task_id': 'Global'})
     cleanup_threads()
     sys.exit(0)
 
 def main() -> int:
-    """Ponto de entrada principal com gestão robusta de erros."""
+    """Main entry point with robust error management.
+
+    Returns:
+        int: The exit code.
+    """
     try:
-        # Configurações iniciais
+        # Initial settings
         faulthandler.enable()
         setup_logging()
         setup_thread_excepthook()
         
-        # Configuração de sinais
+        # Signal configuration
         import signal
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
@@ -129,17 +147,17 @@ def main() -> int:
             from ui.app import App
         except ImportError as e:
             error_message = (
-                f"Erro de importação: {e}\n\n"
-                "Dependências essenciais não encontradas.\n"
-                "Execute: pip install -r requirements.txt"
+                f"Import error: {e}\n\n"
+                "Essential dependencies not found.\n"
+                "Run: pip install -r requirements.txt"
             )
-            logger.critical(f"Falha na importação: {e}", exc_info=True)
+            logger.critical(f"Import failed: {e}", exc_info=True)
             
             try:
                 import tkinter as tk
                 root = tk.Tk()
                 root.withdraw()
-                messagebox.showerror("Erro Crítico", error_message)
+                messagebox.showerror("Critical Error", error_message)
             except Exception:
                 print(error_message, file=sys.stderr)
             return 1
@@ -148,24 +166,24 @@ def main() -> int:
             app = App()
             app.mainloop()
         except Exception as e:
-            error_msg = f"Erro fatal na aplicação: {type(e).__name__}: {e}"
+            error_msg = f"Fatal error in the application: {type(e).__name__}: {e}"
             logger.critical(error_msg, exc_info=True)
             
             try:
-                messagebox.showerror("Erro Fatal", error_msg)
+                messagebox.showerror("Fatal Error", error_msg)
             except Exception:
                 print(error_msg, file=sys.stderr)
             return 1
             
     except Exception as e:
-        print(f"Erro fatal: {e}", file=sys.stderr)
+        print(f"Fatal error: {e}", file=sys.stderr)
         return 1
     finally:
         try:
             cleanup_threads()
-            logger.info("================ ENCERRANDO APLICAÇÃO ================")
+            logger.info("================ CLOSING APPLICATION ================")
         except Exception as e:
-            print(f"Erro na finalização: {e}", file=sys.stderr)
+            print(f"Error on finalization: {e}", file=sys.stderr)
             
     return 0
 
@@ -173,20 +191,31 @@ if __name__ == "__main__":
     sys.exit(main())
 
 class MediaProcessor:
+    """A class to process media files."""
     def __init__(self, app_context):
+        """Initializes the MediaProcessor.
+
+        Args:
+            app_context: The application context.
+        """
         self.app_context = app_context
         self.temp_files = set()
     
     def register_temp_file(self, path: str) -> None:
+        """Registers a temporary file.
+
+        Args:
+            path (str): The path to the temporary file.
+        """
         self.temp_files.add(path)
         self.app_context.register_temp_file(path)
     
     def cleanup(self) -> None:
-        """Limpa recursos do processador"""
+        """Cleans up the processor's resources."""
         for path in self.temp_files:
             try:
                 if os.path.exists(path):
                     os.remove(path)
             except Exception as e:
-                logger.warning(f"Erro ao remover arquivo temporário: {path}: {e}")
+                logger.warning(f"Error when removing temporary file: {path}: {e}")
         self.temp_files.clear()

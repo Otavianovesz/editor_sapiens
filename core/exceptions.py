@@ -1,28 +1,28 @@
 """
-Módulo de exceções personalizadas para o Editor Sapiens.
-Fornece uma hierarquia clara de exceções para melhor tratamento de erros.
+Custom exceptions module for Editor Sapiens.
+Provides a clear exception hierarchy for better error handling.
 """
 
 class SapiensError(Exception):
-    """Classe base para todas as exceções do Editor Sapiens."""
+    """Base class for all Editor Sapiens exceptions."""
     pass
 
 class ResourceError(SapiensError):
-    """Erros relacionados a recursos (arquivos, memória, GPU)."""
+    """Errors related to resources (files, memory, GPU)."""
     pass
 
 class ProcessingError(SapiensError):
-    """Erros durante o processamento de dados."""
+    """Errors during data processing."""
     pass
 
 class ValidationError(SapiensError):
-    """Erros de validação de dados ou configurações."""
+    """Errors in data or configuration validation."""
     pass
 
 class StateError(SapiensError):
-    """Erros relacionados a estados inválidos."""
+    """Errors related to invalid states."""
     pass
 
 class InterruptedError(SapiensError):
-    """Erro quando uma operação é interrompida pelo usuário."""
+    """Error when an operation is interrupted by the user."""
     pass
