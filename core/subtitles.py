@@ -6,8 +6,14 @@ from datetime import timedelta
 from typing import List, Dict, Optional, Tuple, Any
 
 class TimelineRemapper:
-    # (O código desta classe permanece inalterado, pois não faz logging)
+    """Remaps timestamps from the original video to the edited video."""
+    # (The code for this class remains unchanged, as it does not perform logging)
     def __init__(self, segments_to_keep: List[Dict[str, float]]):
+        """Initializes the TimelineRemapper.
+
+        Args:
+            segments_to_keep (List[Dict[str, float]]): A list of segments to keep.
+        """
         self._segments = sorted(segments_to_keep, key=lambda s: s['start'])
         self._original_starts: List[float] = []
         self._offsets: List[float] = []
@@ -22,6 +28,14 @@ class TimelineRemapper:
             last_original_end = segment['end']
 
     def remap_timestamp(self, original_timestamp: float) -> Optional[float]:
+        """Remaps a timestamp from the original video to the edited video.
+
+        Args:
+            original_timestamp (float): The original timestamp.
+
+        Returns:
+            Optional[float]: The remapped timestamp, or None if the timestamp is not in a kept segment.
+        """
         if not self._original_starts: return None
         segment_index = bisect_right(self._original_starts, original_timestamp) - 1
         if segment_index < 0: return None
@@ -31,6 +45,16 @@ class TimelineRemapper:
         return original_timestamp - offset
 
     def remap_event(self, start_time: float, end_time: float) -> Optional[Tuple[float, float]]:
+        """Remaps an event from the original video to the edited video.
+
+        Args:
+            start_time (float): The start time of the event.
+            end_time (float): The end time of the event.
+
+        Returns:
+            Optional[Tuple[float, float]]: A tuple with the remapped start and end times,
+                or None if the event is not in a kept segment.
+        """
         new_start = self.remap_timestamp(start_time)
         new_end = self.remap_timestamp(end_time)
         if new_start is not None and new_end is not None and new_end > new_start:
@@ -38,7 +62,15 @@ class TimelineRemapper:
         return None
 
 class SubtitleGenerator:
+    """Generates a synchronized subtitle file for the edited video."""
     def __init__(self, remapper: TimelineRemapper, logger, task_id: str):
+        """Initializes the SubtitleGenerator.
+
+        Args:
+            remapper (TimelineRemapper): The timeline remapper.
+            logger: The logger instance.
+            task_id (str): The ID of the task.
+        """
         self.remapper = remapper
         self.logger = logger
         self.task_id = task_id
@@ -46,6 +78,14 @@ class SubtitleGenerator:
         self.MAX_PAUSE_BETWEEN_WORDS = 0.7
 
     def _format_time(self, seconds: float) -> str:
+        """Formats seconds into the SRT time format.
+
+        Args:
+            seconds (float): The time in seconds.
+
+        Returns:
+            str: The formatted time.
+        """
         if seconds < 0: seconds = 0.0
         delta = timedelta(seconds=seconds)
         hours, remainder = divmod(delta.seconds, 3600)
@@ -54,6 +94,15 @@ class SubtitleGenerator:
         return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03d}"
 
     def generate_srt(self, words: List[Any], video_path: str) -> Optional[str]:
+        """Generates a synchronized SRT subtitle file.
+
+        Args:
+            words (List[Any]): A list of 'word' objects.
+            video_path (str): The path to the video file.
+
+        Returns:
+            Optional[str]: The path to the generated SRT file, or None if it fails.
+        """
         remapped_words = []
         for word in words:
             remap_result = self.remapper.remap_event(word.start, word.end)
@@ -62,8 +111,8 @@ class SubtitleGenerator:
                 remapped_words.append({'text': word.word.strip(), 'start': new_start, 'end': new_end})
 
         if not remapped_words:
-            # --- CHAMADA DE LOG CORRIGIDA ---
-            self.logger.warning(f"[{self.task_id}] Nenhuma palavra da transcrição foi mantida. Legendas não geradas.")
+            # --- CORRECTED LOG CALL ---
+            self.logger.warning(f"[{self.task_id}] No words from the transcription were kept. Subtitles not generated.")
             return None
 
         srt_entries = []
@@ -96,12 +145,12 @@ class SubtitleGenerator:
             end_str = self._format_time(entry['end'])
             srt_content.append(f"{i + 1}\n{start_str} --> {end_str}\n{entry['text']}\n")
 
-        output_path = os.path.splitext(video_path)[0] + "_editado.srt"
+        output_path = os.path.splitext(video_path)[0] + "_edited.srt"
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(srt_content))
             return output_path
         except IOError as e:
-            # --- CHAMADA DE LOG CORRIGIDA ---
-            self.logger.error(f"[{self.task_id}] Falha ao salvar o arquivo de legenda SRT: {e}")
+            # --- CORRECTED LOG CALL ---
+            self.logger.error(f"[{self.task_id}] Failed to save the SRT subtitle file: {e}")
             return None

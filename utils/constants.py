@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Constantes de status para as tarefas da fila de processamento.
+Status constants for the processing queue tasks.
 """
 
-STATUS_QUEUED = "Aguardando"
-STATUS_PROCESSING = "Processando..."
-STATUS_AWAIT_RENDER = "Aguardando Render"
-STATUS_COMPLETED = "Concluído"
-STATUS_ERROR = "Erro"
-STATUS_INTERRUPTED = "Interrompido"
+STATUS_QUEUED = "Queued"
+STATUS_PROCESSING = "Processing..."
+STATUS_AWAIT_RENDER = "Awaiting Render"
+STATUS_COMPLETED = "Completed"
+STATUS_ERROR = "Error"
+STATUS_INTERRUPTED = "Interrupted"

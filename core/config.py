@@ -4,11 +4,17 @@ import json
 import logging
 
 class Config:
-    """
-    Gerencia as configurações da aplicação, carregando e salvando em um arquivo JSON.
-    Define todos os valores padrão para garantir a robustez do programa.
+    """Manages the application's settings, loading and saving them to a JSON file.
+
+    It defines all default values to ensure the program's robustness.
     """
     def __init__(self, config_path='config_sapiens.json'):
+        """Initializes the Config object.
+
+        Args:
+            config_path (str, optional): The path to the configuration file.
+                Defaults to 'config_sapiens.json'.
+        """
         self.config_path = config_path
         self.default_settings = {
             # Configurações de Transcrição (Whisper)
@@ -57,7 +63,7 @@ class Config:
         self.load_config()
 
     def load_config(self):
-        """Carrega as configurações do arquivo JSON, ou cria um novo se não existir."""
+        """Loads the settings from the JSON file, or creates a new one if it doesn't exist."""
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 # Atualiza as configurações padrão com as salvas pelo usuário
@@ -67,7 +73,11 @@ class Config:
             self.save()
 
     def save(self):
-        """Salva as configurações atuais no arquivo JSON."""
+        """Saves the current settings to the JSON file.
+
+        Returns:
+            bool: True if the settings were saved successfully, False otherwise.
+        """
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
@@ -77,9 +87,23 @@ class Config:
             return False
 
     def get(self, key, default=None):
-        """Obtém um valor de configuração de forma segura."""
+        """Gets a configuration value safely.
+
+        Args:
+            key (str): The key of the setting to get.
+            default (any, optional): The default value to return if the key is not found.
+                Defaults to None.
+
+        Returns:
+            any: The value of the setting, or the default value if the key is not found.
+        """
         return self.settings.get(key, default)
 
     def set(self, key, value):
-        """Define um valor de configuração."""
+        """Sets a configuration value.
+
+        Args:
+            key (str): The key of the setting to set.
+            value (any): The value to set for the key.
+        """
         self.settings[key] = value
